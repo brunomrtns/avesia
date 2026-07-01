@@ -13,7 +13,10 @@ set -euo pipefail
 #   4. Wait for healthchecks
 #   5. Install dependencies
 #   6. Run migrations + seed
-#   7. Start dev servers (turbo dev)
+#   7. Open separate terminals for each dev service (API, Web, Python Worker)
+#
+# The main script finishes after setup. Each service runs in its own terminal
+# window so logs are visible and errors don't get lost.
 # =============================================================================
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -61,6 +64,90 @@ wait_for_health() {
     done
     echo ""
     log_ok "${label} is healthy"
+}
+
+# ── Helper: detect terminal emulator ──────────────────────────────────────────
+# Returns a command prefix that opens a new terminal window with a given title
+# and runs a command in it. Falls back through common emulators.
+detect_terminal() {
+    # The function sets TERM_CMD as an array — the first element is the
+    # emulator binary, followed by its flags. The caller appends the actual
+    # command to run.
+
+    if command -v konsole &>/dev/null; then
+        # KDE Konsole — --new-tab opens in existing window, --hold keeps it open
+        TERM_CMD=(konsole --new-tab --hold --workdir "${SCRIPT_DIR}")
+        log_ok "Terminal: konsole (KDE)"
+        return
+    fi
+
+    if command -v gnome-terminal &>/dev/null; then
+        # GNOME Terminal — --tab opens in existing window
+        TERM_CMD=(gnome-terminal --tab --working-directory="${SCRIPT_DIR}")
+        log_ok "Terminal: gnome-terminal"
+        return
+    fi
+
+    if command -v terminator &>/dev/null; then
+        TERM_CMD=(terminator --new-tab --working-directory="${SCRIPT_DIR}")
+        log_ok "Terminal: terminator"
+        return
+    fi
+
+    if command -v xterm &>/dev/null; then
+        TERM_CMD=(xterm -e "cd ${SCRIPT_DIR} &&")
+        log_ok "Terminal: xterm"
+        return
+    fi
+
+    # Fallback: no graphical terminal — use tmux if available
+    if command -v tmux &>/dev/null; then
+        TERM_CMD=(_tmux_new_window)
+        log_ok "Terminal: tmux (no graphical emulator found)"
+        return
+    fi
+
+    log_fail "No terminal emulator found. Install konsole, gnome-terminal, or tmux."
+}
+
+# tmux fallback: open a new window in an existing or new session
+_tmux_new_window() {
+    local title="$1"
+    shift
+    local cmd="$*"
+
+    # Create or attach to a session named "avesia"
+    if ! tmux has-session -t avesia 2>/dev/null; then
+        tmux new-session -d -s avesia -n "main"
+    fi
+
+    tmux new-window -t avesia -n "${title}" "${cmd}; bash"
+}
+
+# ── Helper: open a terminal tab/window for a service ──────────────────────────
+# Usage: open_service_term "Title" "command string"
+open_service_term() {
+    local title="$1"
+    local cmd="$2"
+
+    if [[ "${TERM_CMD[0]}" == "_tmux_new_window" ]]; then
+        "${TERM_CMD[@]}" "${title}" "${cmd}"
+    elif [[ "${TERM_CMD[0]}" == "xterm" ]]; then
+        # xterm needs the command as part of the -e argument
+        "${TERM_CMD[@]}" "${cmd}; exec bash" &
+    else
+        # konsole / gnome-terminal / terminator — use -e or -- to run the command
+        # We wrap in bash -lc to ensure shell aliases and env are loaded
+        if [[ "${TERM_CMD[0]}" == "konsole" ]]; then
+            konsole --new-tab --hold --workdir "${SCRIPT_DIR}" -p tabtitle="${title}" -e bash -lc "${cmd}" &
+        elif [[ "${TERM_CMD[0]}" == "gnome-terminal" ]]; then
+            gnome-terminal --tab --working-directory="${SCRIPT_DIR}" --title="${title}" -- bash -lc "${cmd}" &
+        elif [[ "${TERM_CMD[0]}" == "terminator" ]]; then
+            terminator --new-tab --working-directory="${SCRIPT_DIR}" --title="${title}" -e "bash -lc '${cmd}'" &
+        else
+            "${TERM_CMD[@]}" -e bash -lc "${cmd}" &
+        fi
+    fi
 }
 
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -203,39 +290,70 @@ else
 fi
 
 # ═══════════════════════════════════════════════════════════════════════════════
-# 7. Start dev servers
+# 7. Start dev servers in separate terminals
 # ═══════════════════════════════════════════════════════════════════════════════
-log_step "Starting dev servers"
+log_step "Starting dev servers (separate terminals)"
 
-# ── Start Python Celery worker (background) ──────────────────────────────────
-log_ok "Starting Python Celery worker (background)"
+detect_terminal
+
+# ── Terminal 1: API server ───────────────────────────────────────────────────
+log_ok "Opening terminal: API (port 3100)"
+open_service_term "Avesia API" \
+    "echo -e '\033[0;36m═══ Avesia API (port 3100) ═══\033[0m' && pnpm --filter @avesia/api dev"
+
+# Small delay so tabs open in order
+sleep 0.5
+
+# ── Terminal 2: Web (Vite) ───────────────────────────────────────────────────
+log_ok "Opening terminal: Web (port 3101)"
+open_service_term "Avesia Web" \
+    "echo -e '\033[0;36m═══ Avesia Web (port 3101) ═══\033[0m' && pnpm --filter @avesia/web dev"
+
+sleep 0.5
+
+# ── Terminal 3: Python Celery worker ─────────────────────────────────────────
+log_ok "Opening terminal: Python Worker (Celery)"
 WORKER_PY_DIR="${SCRIPT_DIR}/apps/worker-python"
-cd "${WORKER_PY_DIR}"
-.venv/bin/python -m celery -A src.tasks.celery_app worker \
-    --queues=transcription,analysis,summarization,notes-generation,rag-indexing \
-    --loglevel="${WORKER_LOG_LEVEL:-info}" \
-    --concurrency=4 \
-    --hostname="avesia@%h" \
-    > /tmp/avesia-worker-python.log 2>&1 &
-WORKER_PID=$!
-log_ok "Python worker started (PID ${WORKER_PID}, logs: /tmp/avesia-worker-python.log)"
-cd "${SCRIPT_DIR}"
+open_service_term "Avesia Worker" \
+    "cd '${WORKER_PY_DIR}' && echo -e '\033[0;36m═══ Avesia Python Worker (Celery) ═══\033[0m' && .venv/bin/python -m celery -A src.tasks.celery_app worker --queues=transcription,analysis,summarization,notes-generation,rag-indexing --loglevel='${WORKER_LOG_LEVEL:-info}' --concurrency=4 --hostname='avesia@%h'"
 
+sleep 0.5
+
+# ── Terminal 4: Docker logs (infra) ──────────────────────────────────────────
+log_ok "Opening terminal: Infra logs (Docker)"
+open_service_term "Avesia Infra" \
+    "echo -e '\033[0;36m═══ Avesia Infrastructure Logs ═══\033[0m' && docker compose logs -f postgres redis minio"
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# Done — print summary
+# ═══════════════════════════════════════════════════════════════════════════════
 echo ""
 echo -e "${GREEN}╔══════════════════════════════════════════════════════════════════╗${NC}"
 echo -e "${GREEN}║  Avesia Dev Environment Ready                                     ║${NC}"
 echo -e "${GREEN}╠══════════════════════════════════════════════════════════════════╣${NC}"
-echo -e "${GREEN}║  API:          http://localhost:3100                              ║${NC}"
-echo -e "${GREEN}║  Web:          http://localhost:3101                              ║${NC}"
-echo -e "${GREEN}║  Worker Health: http://localhost:3102/health                      ║${NC}"
-echo -e "${GREEN}║  Postgres:     localhost:5433                                     ║${NC}"
-echo -e "${GREEN}║  Redis:        localhost:6380                                     ║${NC}"
-echo -e "${GREEN}║  MinIO:        http://localhost:9100  (console: :9101)           ║${NC}"
-echo -e "${GREEN}║  Worker logs:  tail -f /tmp/avesia-worker-python.log             ║${NC}"
+echo -e "${GREEN}║  4 terminals opened — one per service:                           ║${NC}"
+echo -e "${GREEN}║                                                                   ║${NC}"
+echo -e "${GREEN}║  1. API           http://localhost:3100                          ║${NC}"
+echo -e "${GREEN}║  2. Web           http://localhost:3101                          ║${NC}"
+echo -e "${GREEN}║  3. Python Worker  (Celery, background tasks)                    ║${NC}"
+echo -e "${GREEN}║  4. Infra logs    (postgres, redis, minio)                       ║${NC}"
+echo -e "${GREEN}║                                                                   ║${NC}"
+echo -e "${GREEN}║  Postgres:  localhost:5433                                        ║${NC}"
+echo -e "${GREEN}║  Redis:     localhost:6380                                        ║${NC}"
+echo -e "${GREEN}║  MinIO:     http://localhost:9100  (console: :9101)              ║${NC}"
+echo -e "${GREEN}║                                                                   ║${NC}"
+echo -e "${GREEN}║  To stop: Ctrl+C in each terminal, or:                           ║${NC}"
+echo -e "${GREEN}║    docker compose down  (stop infra)                             ║${NC}"
 echo -e "${GREEN}╚══════════════════════════════════════════════════════════════════╝${NC}"
 echo ""
 
-# Run turbo dev (foreground — starts api, web concurrently)
-# The Python worker runs in the background and will be cleaned up on exit
-trap "kill ${WORKER_PID} 2>/dev/null || true" EXIT INT TERM
-exec pnpm dev
+# If using tmux, attach to the session
+if [[ "${TERM_CMD[0]}" == "_tmux_new_window" ]]; then
+    echo -e "${CYAN}tmux session 'avesia' created. Attaching...${NC}"
+    echo -e "${YELLOW}Press Ctrl+B then D to detach without killing the session.${NC}"
+    echo ""
+    exec tmux attach -t avesia
+fi
+
+# For graphical terminals: the main script exits, leaving the tabs running.
+log_ok "All services started in separate terminals. This window can be closed."

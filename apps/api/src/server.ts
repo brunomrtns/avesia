@@ -17,6 +17,7 @@ import sessionRoutes from './routes/sessions.js';
 import organizationRoutes from './routes/organization.js';
 import healthRoutes from './routes/health.js';
 import knowledgeBaseRoutes from './routes/knowledge-base.js';
+import { startCopilotSweep, stopCopilotSweep } from './services/session-copilot-service.js';
 
 async function bootstrap(): Promise<void> {
   const app = Fastify({
@@ -51,9 +52,17 @@ async function bootstrap(): Promise<void> {
   await app.register(organizationRoutes);
   await app.register(knowledgeBaseRoutes);
 
+  // --- Start copilot periodic sweep ---
+  // This ensures sessions with pending segments get processed even if the
+  // event-driven trigger didn't fire (e.g., not enough content at the time,
+  // but enough time has passed since the last segment).
+  const redisUrl = process.env.REDIS_URL ?? 'redis://localhost:6380';
+  startCopilotSweep(app.prisma, redisUrl);
+
   // --- Graceful Shutdown ---
   const shutdown = async (signal: string): Promise<void> => {
     app.log.info({ signal }, 'Received signal, shutting down gracefully');
+    stopCopilotSweep(app.prisma, redisUrl);
     await app.close();
     process.exit(0);
   };

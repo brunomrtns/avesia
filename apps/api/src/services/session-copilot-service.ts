@@ -104,4 +104,16 @@ export function getCopilotRedis(redisUrl: string): IORedis {
   return getRedis(redisUrl);
 }
 
+/** Start the periodic sweep that processes sessions with pending segments. */
+export function startCopilotSweep(prisma: PrismaClient, redisUrl: string, intervalMs?: number): void {
+  const engine = getEngine(prisma, redisUrl);
+  engine.startPeriodicSweep(intervalMs);
+}
+
+/** Stop the periodic sweep (on graceful shutdown). */
+export function stopCopilotSweep(prisma: PrismaClient, redisUrl: string): void {
+  const engine = getEngine(prisma, redisUrl);
+  engine.stopPeriodicSweep();
+}
+
 export { copilotChannel };

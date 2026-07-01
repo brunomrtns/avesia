@@ -89,6 +89,8 @@ export class SessionAIEngine {
   private readonly memoryStore: SessionMemoryStore;
   private readonly triggerDetector: TriggerDetector;
   private readonly ragOrchestrator: RAGOrchestrator;
+  private sweepTimer: ReturnType<typeof setInterval> | null = null;
+  private readonly pendingOrgMap = new Map<string, string>(); // sessionId → organizationId
 
   constructor(
     private readonly ai: AvesiaAICoreFacade,
@@ -98,6 +100,84 @@ export class SessionAIEngine {
     this.memoryStore = new SessionMemoryStore(redis);
     this.triggerDetector = new TriggerDetector(ai);
     this.ragOrchestrator = new RAGOrchestrator(ai, prisma);
+  }
+
+  /**
+   * Start the periodic sweep that checks active sessions for pending segments.
+   * This ensures segments that didn't trigger immediately (not enough content,
+   * rate limit, etc.) get processed after maxFrequencyMs elapses.
+   *
+   * Call this once when the API starts (e.g., in the server bootstrap).
+   */
+  startPeriodicSweep(intervalMs = 20_000): void {
+    if (this.sweepTimer) return; // Already running
+    this.sweepTimer = setInterval(() => {
+      void this.sweepActiveSessions().catch((err) => {
+        console.error(JSON.stringify({
+          level: 'error', component: 'SessionAIEngine', step: 'sweep_error',
+          error: err instanceof Error ? err.message : 'unknown',
+        }));
+      });
+    }, intervalMs);
+    console.log(JSON.stringify({
+      level: 'info', component: 'SessionAIEngine',
+      msg: `Periodic sweep started (interval: ${intervalMs}ms)`,
+    }));
+  }
+
+  /** Stop the periodic sweep (e.g., on graceful shutdown). */
+  stopPeriodicSweep(): void {
+    if (this.sweepTimer) {
+      clearInterval(this.sweepTimer);
+      this.sweepTimer = null;
+    }
+  }
+
+  /**
+   * Check all active sessions for pending segments and process if warranted.
+   * This is the "time-based fallback" — if segments were added but didn't
+   * trigger immediately, this sweep will pick them up after maxFrequencyMs.
+   */
+  private async sweepActiveSessions(): Promise<void> {
+    const sessionIds = await this.memoryStore.getActiveSessions();
+    if (sessionIds.length === 0) return;
+
+    for (const sessionId of sessionIds) {
+      const organizationId = this.pendingOrgMap.get(sessionId);
+      if (!organizationId) continue; // Don't know the org — skip
+
+      try {
+        const settings = await this.memoryStore.getSettings(sessionId);
+        if (!settings.enabled || !settings.autoGenerate) {
+          await this.memoryStore.markSessionInactive(sessionId);
+          this.pendingOrgMap.delete(sessionId);
+          continue;
+        }
+
+        const allSegments = await this.loadSegments(sessionId);
+        const memory = await this.memoryStore.getMemory(sessionId);
+        const pendingSegments = allSegments.filter((s) => s.sequence > memory.lastProcessedSeq);
+
+        if (pendingSegments.length === 0) {
+          // No pending segments — remove from active set.
+          await this.memoryStore.markSessionInactive(sessionId);
+          this.pendingOrgMap.delete(sessionId);
+          continue;
+        }
+
+        // Re-evaluate triggers — the rate limit may have elapsed by now.
+        const trigger = await this.triggerDetector.evaluate(allSegments, memory, settings, Date.now());
+
+        if (trigger.shouldProcess) {
+          await this.processCycle(sessionId, organizationId, trigger, settings, allSegments, memory);
+        }
+      } catch (err) {
+        console.warn(JSON.stringify({
+          level: 'warn', component: 'SessionAIEngine', step: 'sweep_session_failed',
+          sessionId, error: err instanceof Error ? err.message : 'unknown',
+        }));
+      }
+    }
   }
 
   // ── Public API ───────────────────────────────────────────────────────────
@@ -114,6 +194,10 @@ export class SessionAIEngine {
     const settings = await this.memoryStore.getSettings(sessionId);
     if (!settings.enabled || !settings.autoGenerate) return;
 
+    // Track this session as active (for the periodic sweep) and store the orgId.
+    this.pendingOrgMap.set(sessionId, organizationId);
+    await this.memoryStore.markSessionActive(sessionId);
+
     // Load all segments (needed for trigger evaluation and processing).
     const allSegments = await this.loadSegments(sessionId);
     const memory = await this.memoryStore.getMemory(sessionId);
@@ -122,6 +206,13 @@ export class SessionAIEngine {
 
     if (trigger.shouldProcess) {
       await this.processCycle(sessionId, organizationId, trigger, settings, allSegments, memory);
+      // After processing, check if there are still pending segments.
+      const updatedMemory = await this.memoryStore.getMemory(sessionId);
+      const stillPending = allSegments.filter((s) => s.sequence > updatedMemory.lastProcessedSeq);
+      if (stillPending.length === 0) {
+        await this.memoryStore.markSessionInactive(sessionId);
+        this.pendingOrgMap.delete(sessionId);
+      }
     } else {
       // Publish idle status so the frontend knows the copilot is aware but waiting.
       await this.publishStatus(sessionId, 'idle', trigger.pendingSegments.length);
@@ -144,6 +235,16 @@ export class SessionAIEngine {
     if (!trigger.shouldProcess) return null;
 
     return this.processCycle(sessionId, organizationId, trigger, settings, allSegments, memory);
+  }
+
+  /** Get the organizationId for a session (used by the sweep). */
+  getOrganizationForSession(sessionId: string): string | undefined {
+    return this.pendingOrgMap.get(sessionId);
+  }
+
+  /** Register a session→org mapping (for the periodic sweep). */
+  registerSessionOrg(sessionId: string, organizationId: string): void {
+    this.pendingOrgMap.set(sessionId, organizationId);
   }
 
   /** Update copilot settings for a session. */

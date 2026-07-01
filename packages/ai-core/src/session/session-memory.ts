@@ -24,6 +24,7 @@ import {
 
 const MEMORY_KEY = (sessionId: string) => `session:copilot:memory:${sessionId}`;
 const SETTINGS_KEY = (sessionId: string) => `session:copilot:settings:${sessionId}`;
+const ACTIVE_SESSIONS_KEY = 'session:copilot:active_sessions';
 const TTL_SECONDS = 12 * 60 * 60; // 12 hours
 
 export class SessionMemoryStore {
@@ -108,6 +109,25 @@ export class SessionMemoryStore {
 
   async releaseProcessingLock(sessionId: string): Promise<void> {
     await this.redis.del(`session:copilot:lock:${sessionId}`);
+  }
+
+  // ── Active session tracking (for periodic sweep) ─────────────────────────
+
+  /** Mark a session as active (has pending segments to check). */
+  async markSessionActive(sessionId: string): Promise<void> {
+    await this.redis.sadd(ACTIVE_SESSIONS_KEY, sessionId);
+    // Expire the set itself so it doesn't grow forever.
+    await this.redis.expire(ACTIVE_SESSIONS_KEY, TTL_SECONDS);
+  }
+
+  /** Remove a session from the active set (e.g., after all segments processed). */
+  async markSessionInactive(sessionId: string): Promise<void> {
+    await this.redis.srem(ACTIVE_SESSIONS_KEY, sessionId);
+  }
+
+  /** Get all sessions that have pending segments to check. */
+  async getActiveSessions(): Promise<string[]> {
+    return this.redis.smembers(ACTIVE_SESSIONS_KEY);
   }
 }
 
