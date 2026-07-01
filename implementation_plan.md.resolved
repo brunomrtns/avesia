@@ -1,0 +1,108 @@
+# Arquitetura e Plano de Implementação — Avesia AI Core, RBAC & RAG Pipeline
+
+Este plano descreve a arquitetura detalhada e o cronograma de implementação para evoluir a Avesia em um SaaS de saúde robusto com permissões estruturadas no banco, orquestração central de IA (AI Core), RAG com busca vetorial (`pgvector`) e processamento assíncrono em fila (`BullMQ`).
+
+---
+
+## User Review Required
+
+> [!IMPORTANT]
+> **1. Habilitação do `pgvector` no PostgreSQL**
+> A busca semântica para RAG depende da extensão `pgvector`. Precisamos que a imagem Docker ou o banco PostgreSQL local tenha essa extensão instalada e habilitada (`CREATE EXTENSION IF NOT EXISTS vector;`).
+>
+> **2. Estrutura de Redis para Filas (BullMQ)**
+> O processamento em background usa o Redis como message broker do BullMQ. Certifique-se de que o Redis está rodando e configurado corretamente nas variáveis de ambiente.
+
+---
+
+## Proposed Changes
+
+### Componente 1: Regras de Permissão e RBAC (SaaS de Saúde)
+
+Assegurar que o isolamento de dados seja rigoroso no banco de dados e APIs, permitindo que profissionais visualizem apenas seus pacientes/atendimentos, enquanto administradores possuem controle geral.
+
+#### [MODIFY] [schema.prisma](file:///home/bruno/Desenvolvimento/brunointegrations/avesia/apps/api/prisma/schema.prisma)
+- Adicionar relações e chaves para associar `Patient` diretamente a um `Professional` (se desejado isolamento completo) ou manter acesso compartilhado por organização com permissão granular.
+- Adicionar chaves e índices no banco para suportar tabelas de `Permission` com escopos dinâmicos.
+
+#### [MODIFY] [tenant.ts](file:///home/bruno/Desenvolvimento/brunointegrations/avesia/apps/api/src/plugins/tenant.ts)
+- Evoluir o `requirePermission` para validar recursos contextualizados (ex: verificar se a sessão que está sendo acessada pertence ao `professionalId` do usuário ativo se o seu papel for `PROFESSIONAL`).
+
+#### [MODIFY] [patients.ts](file:///home/bruno/Desenvolvimento/brunointegrations/avesia/apps/api/src/routes/patients.ts)
+- Aplicar o filtro de `professionalId` nas rotas `/patients` se o papel logado for `PROFESSIONAL`.
+
+---
+
+### Componente 2: Avesia AI Core (Agent Runtime)
+
+Criar uma camada centralizada para gerenciar prompts, modelos, roteamento e parse de respostas estruturadas de IA.
+
+```mermaid
+graph TD
+    Event[Evento do Sistema] --> Core[Avesia AI Core]
+    Core --> Context[Recuperador de Contexto RAG]
+    Context --> DB[(PostgreSQL + pgvector)]
+    Core --> Router[Provider Router]
+    Router --> Ollama[Ollama Local]
+    Router --> OpenRouter[OpenRouter / Gemini]
+    Router --> NIM[NVIDIA NIM]
+    Core --> Parser[Response Structurer]
+    Parser --> UI[Resultados para Interface]
+```
+
+#### [NEW] [ai-core.ts](file:///home/bruno/Desenvolvimento/brunointegrations/avesia/packages/ai-providers/src/core/ai-core.ts)
+- Criar a classe principal `AvesiaAICore` que centraliza as chamadas a provedores.
+- Implementar gerenciador de templates de prompts.
+- Implementar checagem dinâmica de saúde do provedor (com fallback automático se o Ollama local falhar para o OpenRouter).
+
+---
+
+### Componente 3: Pipeline de RAG (Busca Vetorial & Embeddings)
+
+Permitir o upload de arquivos de contexto, divisão em chunks de texto, geração de vetores de embedding e armazenamento no banco para busca de contexto relevante na IA.
+
+#### [MODIFY] [schema.prisma](file:///home/bruno/Desenvolvimento/brunointegrations/avesia/apps/api/prisma/schema.prisma)
+- Criar o modelo `AIContextChunk` para armazenar as fatias de documentos e sua representação vetorial usando suporte a vetor do Prisma:
+  ```prisma
+  model AIContextChunk {
+    id         String   @id @default(cuid())
+    documentId String   @map("document_id")
+    content    String
+    embedding  Unsupported("vector(1536)")? // Para nomic-embed-text ou OpenAI embeddings
+    createdAt  DateTime @default(now()) @map("created_at")
+
+    document   AIContextDocument @relation(fields: [documentId], references: [id], onDelete: Cascade)
+  }
+  ```
+
+#### [NEW] [rag-service.ts](file:///home/bruno/Desenvolvimento/brunointegrations/avesia/apps/worker/src/services/rag-service.ts)
+- Implementar lógica de chunking de texto (ex: sliding window de 500 caracteres com overlap de 100).
+- Gerar embeddings de texto conectando-se ao provider ativo (Ollama ou OpenAI).
+- Realizar a busca semântica de similaridade de cosseno com os fragmentos mais relevantes.
+
+---
+
+### Componente 4: Filas de Background (BullMQ & Worker)
+
+Substituir o simulador de progresso de arquivos e execução de IA por processos assíncronos em fila para evitar timeouts ou travamento da API.
+
+#### [NEW] [rag.queue.ts](file:///home/bruno/Desenvolvimento/brunointegrations/avesia/apps/worker/src/queues/rag.queue.ts)
+- Configurar a fila de processamento e indexação de documentos do RAG.
+
+#### [MODIFY] [index.ts](file:///home/bruno/Desenvolvimento/brunointegrations/avesia/apps/worker/src/index.ts)
+- Adicionar o RAG Worker que consome os arquivos, extrai o texto, quebra em chunks, envia para a API de Embeddings e salva no PostgreSQL.
+
+---
+
+## Verification Plan
+
+### Automated Tests
+- Testar a geração de embeddings locais com Ollama.
+- Executar os testes de integração do Fastify validando se profissionais são bloqueados ao tentar acessar sessões de outros profissionais.
+  ```bash
+  pnpm --filter @avesia/api test
+  ```
+
+### Manual Verification
+- Fazer upload de um arquivo PDF clínico, acompanhar a barra de progresso no dashboard de Configurações, e verificar na tabela `ai_context_chunks` se os pedaços foram vetorizados.
+- Criar uma sessão como profissional e validar que o dropdown do formulário não é exibido.

@@ -1,0 +1,76 @@
+{
+  "$schema": "https://turbo.build/schema.json",
+  "globalDependencies": ["**/.env.*"],
+  "globalEnv": [
+    "NODE_ENV",
+    "LOG_LEVEL",
+    "API_PORT",
+    "API_HOST",
+    "WEB_PORT",
+    "DATABASE_URL",
+    "REDIS_URL",
+    "S3_ENDPOINT",
+    "S3_BUCKET",
+    "AI_PROVIDER",
+    "JWT_ACCESS_SECRET",
+    "JWT_REFRESH_SECRET",
+    "OPENROUTER_API_KEY",
+    "OPENROUTER_BASE_URL",
+    "OPENROUTER_DEFAULT_MODEL",
+    "NVIDIA_NIM_API_KEY",
+    "NVIDIA_NIM_BASE_URL",
+    "NVIDIA_NIM_DEFAULT_MODEL",
+    "OLLAMA_BASE_URL",
+    "OLLAMA_DEFAULT_MODEL",
+    "LOCAL_WORKER_ENABLED",
+    "LOCAL_WORKER_HEARTBEAT_INTERVAL_MS",
+    "LOCAL_WORKER_OFFLINE_THRESHOLD_MS",
+    "MINIO_ROOT_USER",
+    "MINIO_ROOT_PASSWORD",
+    "MINIO_ENDPOINT",
+    "MINIO_PORT",
+    "MINIO_BUCKET",
+    "VECTOR_STORE",
+    "PGVECTOR_DIMENSIONS",
+    "KB_MAX_EXTRACTION_CHUNKS",
+    "KB_ENTITY_MODE",
+    "KB_SUMMARY_MODE",
+    "KB_CLASSIFY_MODE",
+    "EMBEDDING_MODEL",
+    "CORS_ORIGIN"
+  ],
+  "tasks": {
+    "build": {
+      "dependsOn": ["^build"],
+      "outputs": ["dist/**", "!.dist/**/*.tsbuildinfo"],
+      "inputs": [
+        "src/**",
+        "package.json",
+        "tsconfig.json",
+        "tsconfig.build.json",
+        "*.config.ts",
+        "*.config.js"
+      ]
+    },
+    "dev": {
+      "cache": false,
+      "persistent": true
+    },
+    "lint": {
+      "dependsOn": ["^build"],
+      "outputs": []
+    },
+    "typecheck": {
+      "dependsOn": ["^build"],
+      "outputs": []
+    },
+    "test": {
+      "dependsOn": ["^build"],
+      "outputs": ["coverage/**"],
+      "inputs": ["src/**", "test/**", "tests/**", "*.test.ts", "*.spec.ts"]
+    },
+    "clean": {
+      "cache": false
+    }
+  }
+}

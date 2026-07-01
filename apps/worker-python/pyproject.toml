@@ -1,0 +1,51 @@
+[project]
+name = "avesia-worker"
+version = "0.1.0"
+description = "Avesia background worker — AI pipeline, RAG indexing, clinical analysis"
+requires-python = ">=3.11"
+dependencies = [
+    # Queue
+    "celery[redis]>=5.4.0",
+    # Database
+    "sqlalchemy>=2.0.36",
+    "psycopg2-binary>=2.9.10",
+    # Config
+    "pydantic-settings>=2.6.0",
+    # HTTP client (AI providers)
+    "httpx>=0.27.0",
+    # Object storage
+    "minio>=7.2.13",
+    # NLP / AI processing
+    "spacy>=3.8.0",
+    "scikit-learn>=1.5.2",
+    "sumy>=0.11.0",
+    "nltk>=3.9.1",
+    "networkx>=3.4.2",
+    # PDF extraction
+    "pdfplumber>=0.11.4",
+    "python-docx>=1.1.2",
+    # Logging
+    "structlog>=24.4.0",
+    # Health check server
+    "fastapi>=0.115.0",
+    "uvicorn>=0.32.0",
+    # Utilities
+    "cuid2>=2.0.0",
+    "redis>=5.2.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.3.0",
+    "ipython>=8.28.0",
+]
+
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.celery]
+app = "src.tasks.celery_app"

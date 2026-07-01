@@ -1,0 +1,616 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   AVESIA — NEURAL CALM DESIGN SYSTEM
+   ───────────────────────────────────────────────────────────────────────────
+   Identity: Clinical intelligence with visible warmth.
+   
+   Principles:
+   • Warm dark surfaces (not cold blue-black) — signals trust in healthcare
+   • Teal-cyan primary = clinical intelligence; amber accent = human warmth
+   • Neural mesh pattern = visible "thinking" substrate
+   • 4-step elevation ladder with warm undertones
+   • Hairline borders, mathematical 8px grid
+   • Motion serves function — breathing pulses, not decoration
+   • Confidence is always visible (3-tier visual language)
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+@layer base {
+  /* ── DARK (default) — Warm Clinical Dark ────────────────────────────────── */
+  :root,
+  .dark {
+    /* Surfaces — warm dark with subtle teal undertone (not cold blue) */
+    --background: 220 14% 4%;              /* deep warm charcoal */
+    --background-secondary: 220 12% 5.5%;
+    --surface: 220 14% 6%;                 /* card base — step 1 */
+    --surface-elevated: 220 12% 8%;         /* hover / step 2 */
+    --surface-overlay: 220 14% 10%;         /* popover / step 3 */
+    --surface-floating: 220 14% 12%;        /* modal / step 4 */
+    --foreground: 180 8% 96%;
+    --foreground-secondary: 200 6% 68%;
+    --foreground-muted: 200 5% 42%;
+
+    /* Brand — Clinical Teal (intelligence, precision, calm) */
+    --primary: 172 70% 42%;                 /* teal-400, clinical */
+    --primary-hover: 172 72% 37%;
+    --primary-foreground: 220 20% 4%;
+    --primary-glow: 172 70% 42%;
+    --primary-soft: 172 70% 42% / 0.12;
+
+    /* Accent — Warm Amber (human warmth, attention, care) */
+    --accent: 38 85% 58%;                   /* amber-400 */
+    --accent-hover: 38 85% 53%;
+    --accent-foreground: 220 20% 4%;
+    --accent-glow: 38 85% 58%;
+    --accent-soft: 38 85% 58% / 0.12;
+
+    /* Semantic — refined for clinical context */
+    --success: 152 60% 45%;                 /* sage green */
+    --success-foreground: 220 20% 4%;
+    --success-soft: 152 60% 45% / 0.12;
+    --warning: 38 85% 58%;                  /* shared with accent */
+    --warning-foreground: 220 20% 4%;
+    --warning-soft: 38 85% 58% / 0.12;
+    --destructive: 0 65% 52%;               /* muted red, not aggressive */
+    --destructive-hover: 0 65% 47%;
+    --destructive-foreground: 0 0% 100%;
+    --destructive-soft: 0 65% 52% / 0.12;
+
+    /* Borders — hairline precision */
+    --border: 220 10% 13%;
+    --border-hover: 220 10% 18%;
+    --border-subtle: 220 10% 10%;
+    --input: 220 10% 13%;
+    --ring: 172 70% 42%;
+
+    /* Muted */
+    --muted: 220 10% 10%;
+    --muted-foreground: 200 5% 50%;
+
+    /* Secondary */
+    --secondary: 220 10% 10%;
+    --secondary-foreground: 180 8% 96%;
+
+    /* Popover / Card */
+    --popover: 220 14% 8%;
+    --popover-foreground: 180 8% 96%;
+    --card: 220 14% 6%;
+    --card-foreground: 180 8% 96%;
+
+    /* Radius — refined for premium feel */
+    --radius: 0.5rem;                       /* 8px — precise */
+    --radius-sm: 0.375rem;                  /* 6px */
+    --radius-lg: 0.75rem;                   /* 12px */
+    --radius-xl: 1rem;                      /* 16px */
+    --radius-2xl: 1.5rem;                   /* 24px */
+
+    /* Glassmorphism — warm translucent */
+    --glass-bg: 220 14% 6% / 0.65;
+    --glass-border: 180 8% 96% / 0.06;
+    --glass-blur: 16px;
+
+    /* Shadows — warm depth, not cold black */
+    --shadow-xs: 0 1px 2px 0 rgb(0 0 0 / 0.2);
+    --shadow-sm: 0 2px 4px -1px rgb(0 0 0 / 0.25), 0 1px 2px 0 rgb(0 0 0 / 0.15);
+    --shadow-md: 0 6px 16px -4px rgb(0 0 0 / 0.35), 0 2px 6px -2px rgb(0 0 0 / 0.2);
+    --shadow-lg: 0 16px 40px -8px rgb(0 0 0 / 0.45), 0 4px 12px -4px rgb(0 0 0 / 0.25);
+    --shadow-xl: 0 24px 56px -12px rgb(0 0 0 / 0.5), 0 8px 20px -8px rgb(0 0 0 / 0.3);
+    --shadow-glow: 0 0 32px -8px hsl(var(--primary-glow) / 0.25);
+    --shadow-glow-accent: 0 0 32px -8px hsl(var(--accent-glow) / 0.25);
+    --shadow-inset: inset 0 1px 0 0 hsl(0 0% 100% / 0.03);
+
+    /* Sidebar */
+    --sidebar-width: 248px;
+    --sidebar-collapsed-width: 64px;
+    --sidebar-bg: 220 14% 3.5%;
+    --sidebar-border: 220 10% 11%;
+    --sidebar-item-hover: 220 10% 8%;
+    --sidebar-item-active: 172 70% 42% / 0.10;
+
+    /* Gradients — subtle, purposeful */
+    --gradient-primary: linear-gradient(135deg, hsl(172 70% 42%), hsl(190 65% 38%));
+    --gradient-accent: linear-gradient(135deg, hsl(38 85% 58%), hsl(28 80% 52%));
+    --gradient-surface: linear-gradient(180deg, hsl(220 14% 7%), hsl(220 14% 5%));
+    --gradient-glow: radial-gradient(ellipse at 50% 0%, hsl(172 70% 42% / 0.06), transparent 60%);
+    --gradient-glow-accent: radial-gradient(ellipse at 50% 100%, hsl(38 85% 58% / 0.04), transparent 60%);
+    --gradient-fade-bottom: linear-gradient(180deg, transparent, hsl(220 14% 4% / 0.8));
+
+    /* Neural mesh — custom pattern for "thinking" substrate */
+    --neural-mesh-color: 172 70% 42% / 0.03;
+    --neural-mesh-line: 172 70% 42% / 0.015;
+  }
+
+  /* ── LIGHT — Warm Clinical Light (ivory, not pure white) ────────────────── */
+  .light {
+    /* Surfaces — warm ivory (Anthropic-inspired) */
+    --background: 40 30% 98%;               /* warm ivory */
+    --background-secondary: 40 25% 96%;
+    --surface: 40 30% 99%;                  /* card base */
+    --surface-elevated: 40 25% 97%;
+    --surface-overlay: 0 0% 100%;
+    --surface-floating: 0 0% 100%;
+    --foreground: 220 15% 10%;              /* warm near-black */
+    --foreground-secondary: 220 8% 38%;
+    --foreground-muted: 220 5% 58%;
+
+    /* Brand — slightly deeper for light mode contrast */
+    --primary: 172 65% 35%;
+    --primary-hover: 172 65% 30%;
+    --primary-foreground: 0 0% 100%;
+    --primary-glow: 172 65% 35%;
+    --primary-soft: 172 65% 35% / 0.08;
+
+    /* Accent */
+    --accent: 38 80% 48%;
+    --accent-hover: 38 80% 43%;
+    --accent-foreground: 0 0% 100%;
+    --accent-glow: 38 80% 48%;
+    --accent-soft: 38 80% 48% / 0.08;
+
+    /* Semantic */
+    --success: 152 50% 38%;
+    --success-foreground: 0 0% 100%;
+    --success-soft: 152 50% 38% / 0.08;
+    --warning: 38 80% 48%;
+    --warning-foreground: 0 0% 100%;
+    --warning-soft: 38 80% 48% / 0.08;
+    --destructive: 0 60% 48%;
+    --destructive-hover: 0 60% 43%;
+    --destructive-foreground: 0 0% 100%;
+    --destructive-soft: 0 60% 48% / 0.08;
+
+    /* Borders */
+    --border: 220 10% 88%;
+    --border-hover: 220 10% 80%;
+    --border-subtle: 220 10% 92%;
+    --input: 220 10% 88%;
+    --ring: 172 65% 35%;
+
+    /* Muted */
+    --muted: 40 20% 95%;
+    --muted-foreground: 220 8% 44%;
+
+    /* Secondary */
+    --secondary: 40 20% 95%;
+    --secondary-foreground: 220 15% 10%;
+
+    /* Popover / Card */
+    --popover: 0 0% 100%;
+    --popover-foreground: 220 15% 10%;
+    --card: 0 0% 100%;
+    --card-foreground: 220 15% 10%;
+
+    /* Glassmorphism */
+    --glass-bg: 40 30% 99% / 0.75;
+    --glass-border: 220 15% 10% / 0.05;
+    --glass-blur: 16px;
+
+    /* Shadows — soft, warm */
+    --shadow-xs: 0 1px 2px 0 rgb(0 0 0 / 0.03);
+    --shadow-sm: 0 2px 4px -1px rgb(0 0 0 / 0.05), 0 1px 2px 0 rgb(0 0 0 / 0.03);
+    --shadow-md: 0 6px 16px -4px rgb(0 0 0 / 0.08), 0 2px 6px -2px rgb(0 0 0 / 0.04);
+    --shadow-lg: 0 16px 40px -8px rgb(0 0 0 / 0.10), 0 4px 12px -4px rgb(0 0 0 / 0.05);
+    --shadow-xl: 0 24px 56px -12px rgb(0 0 0 / 0.12), 0 8px 20px -8px rgb(0 0 0 / 0.06);
+    --shadow-glow: 0 0 32px -8px hsl(var(--primary-glow) / 0.12);
+    --shadow-glow-accent: 0 0 32px -8px hsl(var(--accent-glow) / 0.12);
+    --shadow-inset: inset 0 1px 0 0 hsl(0 0% 100% / 0.5);
+
+    /* Sidebar */
+    --sidebar-bg: 40 30% 98%;
+    --sidebar-border: 220 10% 88%;
+    --sidebar-item-hover: 40 20% 95%;
+    --sidebar-item-active: 172 65% 35% / 0.06;
+
+    /* Gradients */
+    --gradient-primary: linear-gradient(135deg, hsl(172 65% 35%), hsl(190 60% 32%));
+    --gradient-accent: linear-gradient(135deg, hsl(38 80% 48%), hsl(28 75% 45%));
+    --gradient-surface: linear-gradient(180deg, hsl(40 30% 99%), hsl(40 25% 97%));
+    --gradient-glow: radial-gradient(ellipse at 50% 0%, hsl(172 65% 35% / 0.04), transparent 60%);
+    --gradient-glow-accent: radial-gradient(ellipse at 50% 100%, hsl(38 80% 48% / 0.03), transparent 60%);
+    --gradient-fade-bottom: linear-gradient(180deg, transparent, hsl(40 30% 98% / 0.8));
+
+    /* Neural mesh */
+    --neural-mesh-color: 172 65% 35% / 0.025;
+    --neural-mesh-line: 172 65% 35% / 0.012;
+  }
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   BASE STYLES
+   ═══════════════════════════════════════════════════════════════════════════ */
+@layer base {
+  * {
+    @apply border-border;
+  }
+
+  html {
+    color-scheme: dark;
+  }
+
+  html.light {
+    color-scheme: light;
+  }
+
+  body {
+    @apply bg-background text-foreground;
+    font-family: 'Inter', system-ui, -apple-system, sans-serif;
+    font-feature-settings: 'rlig' 1, 'calt' 1, 'ss01' 1, 'cv11' 1;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+    text-rendering: optimizeLegibility;
+    letter-spacing: -0.011em;
+  }
+
+  /* Clinical serif — for clinical content, insights, notes */
+  .font-clinical {
+    font-family: 'Georgia', 'Times New Roman', serif;
+    font-feature-settings: 'liga' 1, 'kern' 1;
+    letter-spacing: 0;
+    line-height: 1.65;
+  }
+
+  /* Monospace — for data, metrics, technical info */
+  .font-mono {
+    font-family: 'JetBrains Mono', 'SF Mono', 'Menlo', monospace;
+    font-feature-settings: 'zero' 1, 'ss01' 1;
+  }
+
+  /* Premium scrollbar — thin, warm */
+  ::-webkit-scrollbar {
+    width: 6px;
+    height: 6px;
+  }
+
+  ::-webkit-scrollbar-track {
+    background: transparent;
+  }
+
+  ::-webkit-scrollbar-thumb {
+    @apply bg-muted-foreground/15 rounded-full;
+    border: 2px solid transparent;
+    background-clip: content-box;
+  }
+
+  ::-webkit-scrollbar-thumb:hover {
+    @apply bg-muted-foreground/30;
+  }
+
+  /* Selection — clinical teal */
+  ::selection {
+    background: hsl(var(--primary) / 0.20);
+    color: hsl(var(--foreground));
+  }
+
+  /* Focus visible — consistent ring */
+  :focus-visible {
+    outline: 2px solid hsl(var(--ring) / 0.6);
+    outline-offset: 2px;
+  }
+
+  /* Headings — tighter, more confident */
+  h1, h2, h3, h4, h5, h6 {
+    letter-spacing: -0.025em;
+  }
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   UTILITIES — Neural Calm AI-native helpers
+   ═══════════════════════════════════════════════════════════════════════════ */
+@layer utilities {
+  /* Glassmorphism surface — warm translucent */
+  .glass {
+    background: hsl(var(--glass-bg));
+    backdrop-filter: blur(var(--glass-blur)) saturate(1.2);
+    -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(1.2);
+    border: 1px solid hsl(var(--glass-border));
+  }
+
+  /* Glass with stronger blur — for overlays */
+  .glass-strong {
+    background: hsl(var(--glass-bg) / 0.85);
+    backdrop-filter: blur(24px) saturate(1.4);
+    -webkit-backdrop-filter: blur(24px) saturate(1.4);
+    border: 1px solid hsl(var(--glass-border));
+  }
+
+  /* Gradient text */
+  .text-gradient-primary {
+    background: var(--gradient-primary);
+    -webkit-background-clip: text;
+    background-clip: text;
+    -webkit-text-fill-color: transparent;
+  }
+
+  .text-gradient-accent {
+    background: var(--gradient-accent);
+    -webkit-background-clip: text;
+    background-clip: text;
+    -webkit-text-fill-color: transparent;
+  }
+
+  /* Glow effects — subtle, warm */
+  .glow-primary {
+    box-shadow: var(--shadow-glow);
+  }
+
+  .glow-accent {
+    box-shadow: var(--shadow-glow-accent);
+  }
+
+  /* Gradient backgrounds */
+  .bg-gradient-primary {
+    background: var(--gradient-primary);
+  }
+
+  .bg-gradient-accent {
+    background: var(--gradient-accent);
+  }
+
+  .bg-gradient-surface {
+    background: var(--gradient-surface);
+  }
+
+  .bg-gradient-glow {
+    background: var(--gradient-glow);
+  }
+
+  .bg-gradient-glow-accent {
+    background: var(--gradient-glow-accent);
+  }
+
+  /* Shimmer — for skeletons / AI thinking */
+  .shimmer {
+    background: linear-gradient(
+      90deg,
+      hsl(var(--muted)) 0%,
+      hsl(var(--surface-elevated)) 50%,
+      hsl(var(--muted)) 100%
+    );
+    background-size: 200% 100%;
+    animation: shimmer 2.5s ease-in-out infinite;
+  }
+
+  /* AI pulse — subtle breathing glow (neural activity) */
+  .ai-pulse {
+    animation: ai-pulse 3s ease-in-out infinite;
+  }
+
+  /* Neural pulse — more pronounced, for active AI states */
+  .neural-pulse {
+    animation: neural-pulse 2s ease-in-out infinite;
+  }
+
+  /* Neural mesh background — dots + faint connection lines */
+  .mesh-bg {
+    background-image:
+      radial-gradient(
+        circle at 1px 1px,
+        hsl(var(--neural-mesh-color)) 1px,
+        transparent 0
+      ),
+      linear-gradient(
+        45deg,
+        hsl(var(--neural-mesh-line)) 0%,
+        transparent 50%
+      );
+    background-size: 28px 28px, 56px 56px;
+  }
+
+  /* Neural mesh — denser, for AI-focused areas */
+  .mesh-bg-dense {
+    background-image:
+      radial-gradient(
+        circle at 1px 1px,
+        hsl(var(--neural-mesh-color)) 1.2px,
+        transparent 0
+      ),
+      linear-gradient(
+        30deg,
+        hsl(var(--neural-mesh-line)) 0%,
+        transparent 40%
+      ),
+      linear-gradient(
+        -30deg,
+        hsl(var(--neural-mesh-line)) 0%,
+        transparent 40%
+      );
+    background-size: 20px 20px, 40px 40px, 40px 40px;
+  }
+
+  /* Surface elevation ladder */
+  .elevation-1 {
+    background: hsl(var(--surface));
+    box-shadow: var(--shadow-sm), var(--shadow-inset);
+  }
+
+  .elevation-2 {
+    background: hsl(var(--surface-elevated));
+    box-shadow: var(--shadow-md), var(--shadow-inset);
+  }
+
+  .elevation-3 {
+    background: hsl(var(--surface-overlay));
+    box-shadow: var(--shadow-lg), var(--shadow-inset);
+  }
+
+  .elevation-4 {
+    background: hsl(var(--surface-floating));
+    box-shadow: var(--shadow-xl), var(--shadow-inset);
+  }
+
+  /* Confidence bands — 3-tier visual language */
+  .confidence-high {
+    border-left: 2px solid hsl(var(--success));
+  }
+
+  .confidence-medium {
+    border-left: 2px solid hsl(var(--warning));
+  }
+
+  .confidence-low {
+    border-left: 2px solid hsl(var(--foreground-muted));
+  }
+
+  /* Neural connection line — for graph-inspired dividers */
+  .neural-divider {
+    height: 1px;
+    background: linear-gradient(
+      90deg,
+      transparent,
+      hsl(var(--border)) 20%,
+      hsl(var(--border)) 80%,
+      transparent
+    );
+  }
+
+  /* Soft inner glow — for AI-active containers */
+  .inner-glow-primary {
+    box-shadow: inset 0 0 32px -8px hsl(var(--primary-glow) / 0.08);
+  }
+
+  .inner-glow-accent {
+    box-shadow: inset 0 0 32px -8px hsl(var(--accent-glow) / 0.08);
+  }
+
+  /* Fade mask — for scrollable areas */
+  .mask-fade-bottom {
+    mask-image: linear-gradient(180deg, black 85%, transparent 100%);
+    -webkit-mask-image: linear-gradient(180deg, black 85%, transparent 100%);
+  }
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   KEYFRAMES — Neural Calm motion system
+   ═══════════════════════════════════════════════════════════════════════════ */
+@keyframes shimmer {
+  0% { background-position: 200% 0; }
+  100% { background-position: -200% 0; }
+}
+
+/* AI pulse — gentle breathing, like a calm heartbeat */
+@keyframes ai-pulse {
+  0%, 100% {
+    opacity: 1;
+    box-shadow: 0 0 0 0 hsl(var(--primary-glow) / 0.3);
+  }
+  50% {
+    opacity: 0.85;
+    box-shadow: 0 0 0 6px hsl(var(--primary-glow) / 0);
+  }
+}
+
+/* Neural pulse — more visible, for active processing */
+@keyframes neural-pulse {
+  0%, 100% {
+    opacity: 1;
+    transform: scale(1);
+    box-shadow: 0 0 0 0 hsl(var(--primary-glow) / 0.4);
+  }
+  50% {
+    opacity: 0.7;
+    transform: scale(0.97);
+    box-shadow: 0 0 0 8px hsl(var(--primary-glow) / 0);
+  }
+}
+
+/* Neural thinking — wave animation for AI processing states */
+@keyframes neural-thinking {
+  0%, 100% { transform: translateY(0) scale(1); opacity: 0.4; }
+  50% { transform: translateY(-4px) scale(1.1); opacity: 1; }
+}
+
+/* Connection draw — for neural graph lines appearing */
+@keyframes connection-draw {
+  from { stroke-dashoffset: 100; opacity: 0; }
+  to { stroke-dashoffset: 0; opacity: 1; }
+}
+
+/* Fade in — standard entrance */
+@keyframes fade-in {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+/* Fade in up — content entrance */
+@keyframes fade-in-up {
+  from { opacity: 0; transform: translateY(8px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+/* Fade in down — for dropdowns */
+@keyframes fade-in-down {
+  from { opacity: 0; transform: translateY(-8px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+/* Scale in — for modals, popovers */
+@keyframes scale-in {
+  from { opacity: 0; transform: scale(0.96); }
+  to { opacity: 1; transform: scale(1); }
+}
+
+/* Scale in up — for cards entering */
+@keyframes scale-in-up {
+  from { opacity: 0; transform: scale(0.96) translateY(8px); }
+  to { opacity: 1; transform: scale(1) translateY(0); }
+}
+
+/* Slide in right — for side panels */
+@keyframes slide-in-right {
+  from { opacity: 0; transform: translateX(16px); }
+  to { opacity: 1; transform: translateX(0); }
+}
+
+/* Glow breathe — for AI indicator */
+@keyframes glow-breathe {
+  0%, 100% { box-shadow: 0 0 12px -2px hsl(var(--primary-glow) / 0.2); }
+  50% { box-shadow: 0 0 24px -2px hsl(var(--primary-glow) / 0.4); }
+}
+
+/* Accordion */
+@keyframes accordion-down {
+  from { height: '0'; }
+  to { height: var(--radix-accordion-content-height); }
+}
+
+@keyframes accordion-up {
+  from { height: var(--radix-accordion-content-height); }
+  to { height: '0'; }
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   ANIMATION UTILITY CLASSES
+   ═══════════════════════════════════════════════════════════════════════════ */
+@layer utilities {
+  .animate-fade-in { animation: fade-in 0.3s ease-out; }
+  .animate-fade-in-up { animation: fade-in-up 0.4s cubic-bezier(0.16, 1, 0.3, 1); }
+  .animate-fade-in-down { animation: fade-in-down 0.3s cubic-bezier(0.16, 1, 0.3, 1); }
+  .animate-scale-in { animation: scale-in 0.2s cubic-bezier(0.16, 1, 0.3, 1); }
+  .animate-scale-in-up { animation: scale-in-up 0.35s cubic-bezier(0.16, 1, 0.3, 1); }
+  .animate-slide-in-right { animation: slide-in-right 0.3s cubic-bezier(0.16, 1, 0.3, 1); }
+  .animate-shimmer { animation: shimmer 2.5s ease-in-out infinite; }
+  .animate-ai-pulse { animation: ai-pulse 3s ease-in-out infinite; }
+  .animate-neural-pulse { animation: neural-pulse 2s ease-in-out infinite; }
+  .animate-neural-thinking { animation: neural-thinking 1.4s ease-in-out infinite; }
+  .animate-glow-breathe { animation: glow-breathe 3s ease-in-out infinite; }
+
+  /* Easing curves — Material Motion inspired */
+  .ease-out-expo { transition-timing-function: cubic-bezier(0.16, 1, 0.3, 1); }
+  .ease-out-quart { transition-timing-function: cubic-bezier(0.25, 1, 0.5, 1); }
+  .ease-in-out-quart { transition-timing-function: cubic-bezier(0.76, 0, 0.24, 1); }
+
+  /* Transition presets */
+  .transition-smooth {
+    transition-property: all;
+    transition-duration: 200ms;
+    transition-timing-function: cubic-bezier(0.16, 1, 0.3, 1);
+  }
+
+  .transition-slow {
+    transition-property: all;
+    transition-duration: 400ms;
+    transition-timing-function: cubic-bezier(0.16, 1, 0.3, 1);
+  }
+}

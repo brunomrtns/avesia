@@ -1,0 +1,833 @@
+// ============================================================================
+//  Avesia — Prisma Schema
+//  Multi-tenant Clinical AI SaaS for psychologists
+//
+//  Conventions:
+//  - IDs: cuid() (globally unique, URL-safe, sortable-ish)
+//  - Enums: NOT used (ADR-013). String fields with documented allowed values.
+//  - Multi-tenancy: every entity (except Organization, Specialty, Permission)
+//    has organizationId + relation + @@index (ADR-002).
+//  - Soft-delete: deletedAt on Organization, User, Professional, Patient (ADR-008).
+//  - Timestamps: createdAt (default now), updatedAt (@updatedAt).
+//  - Column names: snake_case via @map for PostgreSQL convention.
+//  - Table names: snake_case via @@map.
+// ============================================================================
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ============================================================================
+//  1. Organization — Tenant Root
+// ============================================================================
+
+model Organization {
+  id        String    @id @default(cuid())
+  name      String
+  slug      String    @unique
+  /// Allowed values: ACTIVE | SUSPENDED
+  status    String    @default("ACTIVE")
+  settings  Json      @default("{}")
+  createdAt DateTime  @default(now()) @map("created_at")
+  updatedAt DateTime  @updatedAt @map("updated_at")
+  deletedAt DateTime? @map("deleted_at")
+
+  // Relations — all Restrict: never cascade-delete tenant children (ADR-002)
+  users            User[]
+  professionals    Professional[]
+  patients         Patient[]
+  clinicalSessions ClinicalSession[]
+  sessionRecordings SessionRecording[]
+  transcripts      Transcript[]
+  transcriptSegments TranscriptSegment[]
+  clinicalNotes    ClinicalNote[]
+  aiAnalyses       AIAnalysis[]
+  copilotAnalyses  SessionCopilotAnalysis[]
+  attachments      Attachment[]
+  consents         Consent[]
+  auditLogs        AuditLog[]
+  refreshTokens    RefreshToken[]
+  localWorkers     LocalWorker[]
+  aiContextDocuments AIContextDocument[]
+  professionalPatients ProfessionalPatient[]
+  knowledgeBases KnowledgeBase[]
+
+  @@map("organizations")
+}
+
+// ============================================================================
+//  2. User — Authentication Account
+// ============================================================================
+
+model User {
+  id             String    @id @default(cuid())
+  organizationId String    @map("organization_id")
+  email          String
+  passwordHash   String    @map("password_hash")
+  /// Allowed values: OWNER | ADMIN | PROFESSIONAL
+  role           String
+  /// Allowed values: ACTIVE | DISABLED | INVITED
+  status         String    @default("ACTIVE")
+  lastLoginAt    DateTime? @map("last_login_at")
+  createdAt      DateTime  @default(now()) @map("created_at")
+  updatedAt      DateTime  @updatedAt @map("updated_at")
+  deletedAt      DateTime? @map("deleted_at")
+
+  // Relations
+  organization    Organization   @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  professional    Professional?
+  authoredNotes   ClinicalNote[] @relation("ClinicalNoteAuthor")
+  finalizedNotes  ClinicalNote[] @relation("ClinicalNoteFinalizer")
+  grantedConsents Consent[]      @relation("ConsentGrantedBy")
+  revokedConsents Consent[]      @relation("ConsentRevokedBy")
+  attachments     Attachment[]
+  auditLogs       AuditLog[]
+  refreshTokens   RefreshToken[]
+
+  @@unique([organizationId, email])
+  @@index([organizationId])
+  @@map("users")
+}
+
+// ============================================================================
+//  3. Specialty — Extensible (NOT enum, per ADR-003)
+// ============================================================================
+
+model Specialty {
+  id          String    @id @default(cuid())
+  name        String
+  slug        String    @unique
+  description String?
+  active      Boolean   @default(true)
+  createdAt   DateTime  @default(now()) @map("created_at")
+  updatedAt   DateTime  @updatedAt @map("updated_at")
+
+  professionals Professional[]
+
+  @@map("specialties")
+}
+
+// ============================================================================
+//  4. Professional — Health Professional Profile (1:1 with User)
+// ============================================================================
+
+model Professional {
+  id             String    @id @default(cuid())
+  organizationId String    @map("organization_id")
+  userId         String    @unique @map("user_id")
+  specialtyId    String    @map("specialty_id")
+  fullName       String    @map("full_name")
+  documentNumber String    @map("document_number")
+  avatarUrl      String?   @map("avatar_url")
+  bio            String?
+  /// Allowed values: ACTIVE | INACTIVE
+  status         String    @default("ACTIVE")
+  createdAt      DateTime  @default(now()) @map("created_at")
+  updatedAt      DateTime  @updatedAt @map("updated_at")
+  deletedAt      DateTime? @map("deleted_at")
+
+  // Relations
+  organization Organization    @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  user          User            @relation(fields: [userId], references: [id], onDelete: Restrict)
+  specialty     Specialty       @relation(fields: [specialtyId], references: [id], onDelete: Restrict)
+  sessions      ClinicalSession[]
+  patients      ProfessionalPatient[]
+
+  @@index([organizationId])
+  @@map("professionals")
+}
+
+// ============================================================================
+//  5. Patient — Person Receiving Care
+// ============================================================================
+
+model Patient {
+  id             String    @id @default(cuid())
+  organizationId String    @map("organization_id")
+  fullName       String    @map("full_name")
+  email          String?
+  phone          String?
+  dateOfBirth    DateTime? @map("date_of_birth")
+  /// Allowed values: MALE | FEMALE | OTHER | UNKNOWN
+  gender         String?
+  address        Json?
+  notes          String?
+  /// Allowed values: ACTIVE | ARCHIVED
+  status         String    @default("ACTIVE")
+  tags           String[]
+  createdAt      DateTime  @default(now()) @map("created_at")
+  updatedAt      DateTime  @updatedAt @map("updated_at")
+  deletedAt      DateTime? @map("deleted_at")
+
+  // Relations — Patient deletion cascades to children
+  organization Organization      @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  sessions     ClinicalSession[]
+  clinicalNotes ClinicalNote[]
+  professionals ProfessionalPatient[]
+  consents     Consent[]
+  attachments  Attachment[]
+
+  // PostgreSQL allows multiple NULLs in unique constraint — partial unique behavior
+  @@unique([organizationId, email])
+  @@index([organizationId])
+  @@index([organizationId, status])
+  @@index([organizationId, fullName])
+  @@map("patients")
+}
+
+// ============================================================================
+//  5b. ProfessionalPatient — Junction Table for Professional & Patient (RBAC)
+// ============================================================================
+
+model ProfessionalPatient {
+  organizationId String       @map("organization_id")
+  professionalId String       @map("professional_id")
+  patientId      String       @map("patient_id")
+  createdAt      DateTime     @default(now()) @map("created_at")
+
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  professional   Professional @relation(fields: [professionalId], references: [id], onDelete: Cascade)
+  patient        Patient      @relation(fields: [patientId], references: [id], onDelete: Cascade)
+
+  @@id([professionalId, patientId])
+  @@index([organizationId])
+  @@index([patientId])
+  @@map("professional_patients")
+}
+
+// ============================================================================
+//  6. ClinicalSession — Therapy Session
+// ============================================================================
+
+model ClinicalSession {
+  id             String    @id @default(cuid())
+  organizationId String    @map("organization_id")
+  patientId      String    @map("patient_id")
+  professionalId String    @map("professional_id")
+  scheduledAt    DateTime  @map("scheduled_at")
+  startedAt      DateTime? @map("started_at")
+  endedAt        DateTime? @map("ended_at")
+  /// Allowed values: SCHEDULED | IN_PROGRESS | COMPLETED | CANCELLED
+  status         String    @default("SCHEDULED")
+  /// Allowed values: INITIAL | FOLLOW_UP | EMERGENCY
+  type           String
+  /// Allowed values: IN_PERSON | VIDEO | PHONE
+  location       String
+  summary        String?
+  createdAt      DateTime  @default(now()) @map("created_at")
+  updatedAt      DateTime  @updatedAt @map("updated_at")
+
+  // Relations
+  organization Organization       @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  patient      Patient            @relation(fields: [patientId], references: [id], onDelete: Cascade)
+  professional Professional       @relation(fields: [professionalId], references: [id], onDelete: Restrict)
+  recordings   SessionRecording[]
+  notes        ClinicalNote[]
+  aiAnalyses   AIAnalysis[]
+  copilotSettings      SessionCopilotSettings?
+  copilotAnalyses      SessionCopilotAnalysis[]
+  attachments  Attachment[]
+  transcripts  Transcript[]
+
+  @@index([organizationId])
+  @@index([organizationId, status])
+  @@index([organizationId, scheduledAt])
+  @@index([patientId])
+  @@index([professionalId])
+  @@map("clinical_sessions")
+}
+
+// ============================================================================
+//  7. SessionRecording — Audio/Video File
+// ============================================================================
+
+model SessionRecording {
+  id              String    @id @default(cuid())
+  organizationId  String    @map("organization_id")
+  sessionId       String    @map("session_id")
+  storageKey      String    @map("storage_key")
+  /// Allowed values: MP3 | WAV | M4A | MP4 | WEBM
+  format          String
+  durationSeconds Int?      @map("duration_seconds")
+  sizeBytes       BigInt?   @map("size_bytes")
+  /// Allowed values: UPLOADED | PROCESSING | COMPLETED | FAILED
+  status          String    @default("UPLOADED")
+  errorMessage    String?   @map("error_message")
+  createdAt       DateTime  @default(now()) @map("created_at")
+  updatedAt       DateTime  @updatedAt @map("updated_at")
+
+  // Relations
+  organization Organization     @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  session      ClinicalSession  @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  transcripts  Transcript[]
+
+  @@index([organizationId])
+  @@index([sessionId])
+  @@map("session_recordings")
+}
+
+// ============================================================================
+//  8. Transcript — Full Transcript of a Recording
+// ============================================================================
+
+model Transcript {
+  id              String    @id @default(cuid())
+  organizationId  String    @map("organization_id")
+  recordingId     String    @map("recording_id")
+  sessionId       String    @map("session_id")
+  /// Allowed values: PENDING | PROCESSING | COMPLETED | FAILED | EDITED
+  status          String    @default("PENDING")
+  language        String    @default("pt-BR")
+  /// Which AI provider generated this transcript (openrouter | nvidia-nim | ollama)
+  provider        String?
+  tokenCount      Int?      @map("token_count")
+  createdAt       DateTime  @default(now()) @map("created_at")
+  updatedAt       DateTime  @updatedAt @map("updated_at")
+
+  // Relations
+  organization Organization        @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  recording    SessionRecording    @relation(fields: [recordingId], references: [id], onDelete: Cascade)
+  session      ClinicalSession     @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  segments     TranscriptSegment[]
+  aiAnalyses   AIAnalysis[]
+
+  @@index([organizationId])
+  @@index([sessionId])
+  @@index([recordingId])
+  @@map("transcripts")
+}
+
+// ============================================================================
+//  9. TranscriptSegment — Timestamped Segment Within a Transcript
+// ============================================================================
+
+model TranscriptSegment {
+  id              String   @id @default(cuid())
+  transcriptId    String   @map("transcript_id")
+  organizationId  String   @map("organization_id")
+  sequence        Int
+  startTime       Float    @map("start_time")
+  endTime         Float    @map("end_time")
+  /// Allowed values: THERAPIST | PATIENT | UNKNOWN
+  speaker         String
+  text            String
+  confidence      Float?
+  createdAt       DateTime @default(now()) @map("created_at")
+  updatedAt       DateTime @updatedAt @map("updated_at")
+
+  // Relations
+  transcript   Transcript  @relation(fields: [transcriptId], references: [id], onDelete: Cascade)
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+
+  @@unique([transcriptId, sequence])
+  @@index([transcriptId, sequence])
+  @@index([organizationId])
+  @@map("transcript_segments")
+}
+
+// ============================================================================
+//  10. ClinicalNote — Versioned Medical Record (ADR-007)
+//     Never overwrite — each edit creates a new version with self-reference.
+// ============================================================================
+
+model ClinicalNote {
+  id               String    @id @default(cuid())
+  organizationId   String    @map("organization_id")
+  sessionId        String    @map("session_id")
+  patientId        String    @map("patient_id")
+  authorId         String    @map("author_id")
+  version          Int       @default(1)
+  previousVersionId String?  @map("previous_version_id")
+  /// SOAP-structured content:
+  /// { subjective, objective, assessment, plan, observations, tasks }
+  content          Json
+  /// Allowed values: DRAFT | FINALIZED
+  status           String    @default("DRAFT")
+  finalizedAt      DateTime? @map("finalized_at")
+  finalizedById    String?   @map("finalized_by_id")
+  createdAt        DateTime  @default(now()) @map("created_at")
+  updatedAt        DateTime  @updatedAt @map("updated_at")
+
+  // Relations
+  organization    Organization   @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  session         ClinicalSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  patient         Patient        @relation(fields: [patientId], references: [id], onDelete: Cascade)
+  author          User           @relation("ClinicalNoteAuthor", fields: [authorId], references: [id], onDelete: Restrict)
+  finalizedBy     User?          @relation("ClinicalNoteFinalizer", fields: [finalizedById], references: [id], onDelete: SetNull)
+  previousVersion ClinicalNote?  @relation("ClinicalNoteVersions", fields: [previousVersionId], references: [id], onDelete: NoAction)
+  nextVersion     ClinicalNote[] @relation("ClinicalNoteVersions")
+
+  @@unique([sessionId, version])
+  @@index([organizationId])
+  @@index([sessionId, version])
+  @@index([patientId])
+  @@map("clinical_notes")
+}
+
+// ============================================================================
+//  11. AIAnalysis — AI-Produced Output
+// ============================================================================
+
+model AIAnalysis {
+  id              String    @id @default(cuid())
+  organizationId  String    @map("organization_id")
+  sessionId       String    @map("session_id")
+  transcriptId    String?   @map("transcript_id")
+  /// Allowed values: SUMMARY | TOPICS | KEYWORDS | INSIGHTS | TREATMENT_PLAN
+  type            String
+  /// Provider: openrouter | nvidia-nim | ollama
+  provider        String
+  /// Model identifier (e.g., "meta-llama/llama-3-70b", "gpt-4o-mini")
+  model           String
+  input           Json
+  output          Json
+  /// { prompt, completion, total }
+  tokensUsed      Json      @map("tokens_used")
+  /// Allowed values: PENDING | PROCESSING | COMPLETED | FAILED
+  status          String    @default("PENDING")
+  errorMessage    String?   @map("error_message")
+  durationMs      Int?      @map("duration_ms")
+  createdAt       DateTime  @default(now()) @map("created_at")
+  updatedAt       DateTime  @updatedAt @map("updated_at")
+
+  // Relations
+  organization Organization     @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  session      ClinicalSession  @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  transcript   Transcript?      @relation(fields: [transcriptId], references: [id], onDelete: SetNull)
+
+  @@index([organizationId])
+  @@index([sessionId])
+  @@index([sessionId, type])
+  @@map("ai_analyses")
+}
+
+// ============================================================================
+//  11b. SessionCopilotSettings — Per-session AI copilot configuration
+// ============================================================================
+model SessionCopilotSettings {
+  id              String   @id @default(cuid())
+  sessionId       String   @unique @map("session_id")
+  /// Is the real-time copilot active for this session?
+  enabled         Boolean  @default(true)
+  /// low | medium | high — controls trigger sensitivity and output verbosity
+  intensity       String   @default("medium")
+  /// Minimum milliseconds between copilot processing cycles (rate limit)
+  maxFrequencyMs  Int      @default(30000) @map("max_frequency_ms")
+  /// Whether to auto-generate assistance without the professional clicking "generate"
+  autoGenerate    Boolean  @default(true)
+  createdAt       DateTime @default(now()) @map("created_at")
+  updatedAt       DateTime @updatedAt @map("updated_at")
+
+  session         ClinicalSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+
+  @@map("session_copilot_settings")
+}
+
+// ============================================================================
+//  11c. SessionCopilotAnalysis — Persisted copilot output for review
+// ============================================================================
+model SessionCopilotAnalysis {
+  id              String   @id @default(cuid())
+  sessionId       String   @map("session_id")
+  organizationId  String   @map("organization_id")
+  /// First segment sequence included in this analysis
+  segmentSeqStart Int      @map("segment_seq_start")
+  /// Last segment sequence included in this analysis
+  segmentSeqEnd   Int      @map("segment_seq_end")
+  /// Structured CopilotAssistance JSON (insights, hypotheses, questions, etc.)
+  assistance      Json
+  /// Snapshot of SessionMemory at the time of this analysis
+  memorySnapshot  Json     @map("memory_snapshot")
+  /// Concepts from the Knowledge Graph that were referenced
+  conceptIds      String[] @map("concept_ids")
+  /// Community cluster that was expanded
+  community       Int?
+  tokensUsed      Int      @default(0) @map("tokens_used")
+  durationMs      Int?     @map("duration_ms")
+  createdAt       DateTime @default(now()) @map("created_at")
+
+  session         ClinicalSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  organization    Organization     @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@index([sessionId])
+  @@index([organizationId])
+  @@index([sessionId, segmentSeqEnd])
+  @@map("session_copilot_analyses")
+}
+
+// ============================================================================
+//  12. Attachment — Uploaded File
+// ============================================================================
+
+model Attachment {
+  id              String    @id @default(cuid())
+  organizationId  String    @map("organization_id")
+  sessionId       String?   @map("session_id")
+  patientId       String?   @map("patient_id")
+  uploadedById    String    @map("uploaded_by_id")
+  storageKey      String    @map("storage_key")
+  fileName        String    @map("file_name")
+  mimeType        String    @map("mime_type")
+  sizeBytes       BigInt    @map("size_bytes")
+  /// Allowed values: AUDIO | DOCUMENT | IMAGE
+  type            String
+  category        String?
+  createdAt       DateTime  @default(now()) @map("created_at")
+
+  // Relations
+  organization Organization     @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  session      ClinicalSession? @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  patient      Patient?         @relation(fields: [patientId], references: [id], onDelete: Cascade)
+  uploadedBy   User             @relation(fields: [uploadedById], references: [id], onDelete: Restrict)
+
+  @@index([organizationId])
+  @@index([patientId])
+  @@index([sessionId])
+  @@map("attachments")
+}
+
+// ============================================================================
+//  13. Consent — LGPD Consent Record
+// ============================================================================
+
+model Consent {
+  id              String    @id @default(cuid())
+  organizationId  String    @map("organization_id")
+  patientId       String    @map("patient_id")
+  /// Allowed values: RECORDING | DATA_PROCESSING | AI_ANALYSIS
+  type            String
+  granted         Boolean   @default(false)
+  grantedAt       DateTime? @map("granted_at")
+  grantedById     String?   @map("granted_by_id")
+  revokedAt       DateTime? @map("revoked_at")
+  revokedById     String?   @map("revoked_by_id")
+  expiresAt       DateTime? @map("expires_at")
+  notes           String?
+  createdAt       DateTime  @default(now()) @map("created_at")
+  updatedAt       DateTime  @updatedAt @map("updated_at")
+
+  // Relations
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  patient      Patient      @relation(fields: [patientId], references: [id], onDelete: Cascade)
+  grantedBy    User?        @relation("ConsentGrantedBy", fields: [grantedById], references: [id], onDelete: SetNull)
+  revokedBy    User?        @relation("ConsentRevokedBy", fields: [revokedById], references: [id], onDelete: SetNull)
+
+  @@index([organizationId])
+  @@index([patientId, type])
+  @@map("consents")
+}
+
+// ============================================================================
+//  14. AuditLog — Immutable Security Audit Trail
+//     NO updatedAt, NO deletedAt — records are permanent.
+// ============================================================================
+
+model AuditLog {
+  id              String    @id @default(cuid())
+  organizationId  String    @map("organization_id")
+  userId          String?   @map("user_id")
+  action          String
+  resource        String
+  resourceId      String?   @map("resource_id")
+  metadata        Json      @default("{}")
+  ipAddress       String    @map("ip_address")
+  userAgent       String    @map("user_agent")
+  createdAt       DateTime  @default(now()) @map("created_at")
+
+  // Relations — SetNull: keep log even if user is deleted
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  user         User?        @relation(fields: [userId], references: [id], onDelete: SetNull)
+
+  @@index([organizationId, createdAt])
+  @@index([userId])
+  @@index([resource, resourceId])
+  @@map("audit_logs")
+}
+
+// ============================================================================
+//  15. RefreshToken — JWT Refresh Token Rotation (ADR-006)
+// ============================================================================
+
+model RefreshToken {
+  id              String    @id @default(cuid())
+  organizationId  String    @map("organization_id")
+  userId          String    @map("user_id")
+  tokenHash       String    @map("token_hash")
+  /// Token family: group of rotated tokens. Reuse detection revokes entire family.
+  family          String
+  expiresAt       DateTime  @map("expires_at")
+  revokedAt       DateTime? @map("revoked_at")
+  /// True if token was revoked due to reuse detection (assumed stolen)
+  revokedByReuse  Boolean   @default(false) @map("revoked_by_reuse")
+  createdAt       DateTime  @default(now()) @map("created_at")
+
+  // Relations
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  user         User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([tokenHash])
+  @@index([family])
+  @@map("refresh_tokens")
+}
+
+// ============================================================================
+//  16. Permission — RBAC Matrix (seed-ready, global)
+// ============================================================================
+
+model Permission {
+  id        String   @id @default(cuid())
+  /// Allowed values: OWNER | ADMIN | PROFESSIONAL
+  role      String
+  resource  String
+  /// Allowed values: create | read | update | delete
+  action    String
+  createdAt DateTime @default(now()) @map("created_at")
+
+  @@unique([role, resource, action])
+  @@map("permissions")
+}
+
+// ============================================================================
+//  17. LocalWorker — Tracks Local Worker Heartbeats (ADR-005)
+// ============================================================================
+
+model LocalWorker {
+  id               String    @id @default(cuid())
+  /// Nullable: workers may be org-scoped or global
+  organizationId   String?   @map("organization_id")
+  workerId         String    @unique @map("worker_id")
+  hostname         String
+  /// { models: string[], type: string }
+  capabilities     Json      @default("{}")
+  lastHeartbeatAt  DateTime  @map("last_heartbeat_at")
+  /// Allowed values: ONLINE | OFFLINE
+  status           String    @default("OFFLINE")
+  createdAt        DateTime  @default(now()) @map("created_at")
+  updatedAt        DateTime  @updatedAt @map("updated_at")
+
+  // Relations
+  organization Organization? @relation(fields: [organizationId], references: [id], onDelete: SetNull)
+
+  @@map("local_workers")
+}
+
+// ============================================================================
+//  18. AIContextDocument — Clinical Context Document for AI (RAG)
+// ============================================================================
+
+model AIContextDocument {
+  id             String    @id @default(cuid())
+  organizationId String    @map("organization_id")
+  fileName       String    @map("file_name")
+  status         String    @default("PENDING") // PENDING | PROCESSING | COMPLETED | FAILED
+  progress       Int       @default(0)
+  errorMessage   String?   @map("error_message")
+  createdAt      DateTime  @default(now()) @map("created_at")
+  updatedAt      DateTime  @updatedAt @map("updated_at")
+
+  organization   Organization             @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  chunks         AIContextChunk[]
+  knowledgeDocument KnowledgeDocument? @relation("KbDocumentContext")
+
+  @@index([organizationId])
+  @@map("ai_context_documents")
+}
+
+// ============================================================================
+//  19. AIContextChunk — Chunks with vectors for RAG
+// ============================================================================
+
+model AIContextChunk {
+  id             String    @id @default(cuid())
+  documentId     String    @map("document_id")
+  content        String
+  embedding      Float[]
+  /// pgvector column (nullable) — populated when pgvector is active for ANN search.
+  embeddingVec   Unsupported("vector(768)")? @map("embedding_vec")
+  /// Structure-aware chunk metadata (travels with the chunk through retrieval).
+  section        String?   @map("section")
+  headingPath    String[]  @map("heading_path")
+  page           Int?
+  charStart      Int       @default(0) @map("char_start")
+  charEnd        Int       @default(0) @map("char_end")
+  createdAt      DateTime  @default(now()) @map("created_at")
+
+  document       AIContextDocument @relation(fields: [documentId], references: [id], onDelete: Cascade)
+
+  @@index([documentId])
+  @@map("ai_context_chunks")
+}
+
+// ============================================================================
+//  20. KnowledgeBase — Container for Knowledge Base Module
+//      Disconnected from core RAG — serves as organizational layer
+//      Types: ORG | PROFESSIONAL | SHARED
+// ============================================================================
+
+model KnowledgeBase {
+  id              String    @id @default(cuid())
+  organizationId  String    @map("organization_id")
+  professionalId  String?   @map("professional_id")
+  type            String    // ORG | PROFESSIONAL | SHARED
+  name            String
+  description     String?
+  createdAt       DateTime  @default(now()) @map("created_at")
+  updatedAt       DateTime  @updatedAt @map("updated_at")
+  deletedAt       DateTime? @map("deleted_at")
+
+  organization Organization          @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  documents    KnowledgeDocument[]
+  topics       KnowledgeTopic[]
+  concepts     KnowledgeConcept[]
+  relations    KnowledgeRelation[]
+
+  @@index([organizationId])
+  @@index([organizationId, type])
+  @@map("knowledge_bases")
+}
+
+// ============================================================================
+//  21. KnowledgeDocument — Document Within a Knowledge Base
+//      Links to AIContextDocument for chunk/embedding data
+// ============================================================================
+
+model KnowledgeDocument {
+  id                String    @id @default(cuid())
+  knowledgeBaseId   String    @map("knowledge_base_id")
+  contextDocumentId String?   @unique @map("context_document_id")
+  originalFileName  String    @map("original_file_name")
+  fileType          String    @map("file_type")  // pdf | docx | txt | md
+  fileSize          Int?      @map("file_size")
+  storageKey        String?   @map("storage_key")
+  /// MinIO key for the Markdown version (every document is converted to .md on import).
+  markdownStorageKey String?  @map("markdown_storage_key")
+  /// MinIO key for the structured JSON chunks (index → {content, section, heading}).
+  chunksStorageKey   String?  @map("chunks_storage_key")
+  status            String    @default("PENDING") // PENDING | PROCESSING | COMPLETED | FAILED
+  progress          Int       @default(0)
+  summary           String?
+  keywords          String[]
+  themes            String[]
+  entities          Json?
+  categories        Json?
+  chunkCount        Int?      @map("chunk_count")
+  errorMessage      String?   @map("error_message")
+  createdAt         DateTime  @default(now()) @map("created_at")
+  updatedAt         DateTime  @updatedAt @map("updated_at")
+
+  knowledgeBase   KnowledgeBase              @relation(fields: [knowledgeBaseId], references: [id], onDelete: Cascade)
+  contextDocument AIContextDocument?         @relation("KbDocumentContext", fields: [contextDocumentId], references: [id], onDelete: SetNull)
+  topics          KnowledgeDocumentTopic[]
+
+  @@index([knowledgeBaseId])
+  @@index([knowledgeBaseId, status])
+  @@map("knowledge_documents")
+}
+
+// ============================================================================
+//  22. KnowledgeTopic — Auto-generated Hierarchical Topic
+//      path is a materialized path (e.g., "/techniques/cbt/behavioral")
+// ============================================================================
+
+model KnowledgeTopic {
+  id              String    @id @default(cuid())
+  knowledgeBaseId String    @map("knowledge_base_id")
+  parentId        String?   @map("parent_id")
+  name            String
+  description     String?
+  path            String    // materialized path for efficient subtree queries
+  sortOrder       Int       @default(0) @map("sort_order")
+  createdAt       DateTime  @default(now()) @map("created_at")
+  updatedAt       DateTime  @updatedAt @map("updated_at")
+
+  knowledgeBase KnowledgeBase              @relation(fields: [knowledgeBaseId], references: [id], onDelete: Cascade)
+  parent        KnowledgeTopic?            @relation("KnowledgeTopicHierarchy", fields: [parentId], references: [id], onDelete: SetNull)
+  children      KnowledgeTopic[]           @relation("KnowledgeTopicHierarchy")
+  documents     KnowledgeDocumentTopic[]
+  concepts      KnowledgeConcept[]
+
+  @@index([knowledgeBaseId])
+  @@index([parentId])
+  @@map("knowledge_topics")
+}
+
+// ============================================================================
+//  23. KnowledgeConcept — Extracted Entity/Concept
+//      Types: CONCEPT | PERSON | METHOD | DISORDER | TECHNIQUE | PLACE | TERM
+// ============================================================================
+
+model KnowledgeConcept {
+  id              String    @id @default(cuid())
+  knowledgeBaseId String    @map("knowledge_base_id")
+  name            String
+  description     String?
+  type            String    // CONCEPT | PERSON | METHOD | DISORDER | TECHNIQUE | PLACE | TERM
+  sourceCount     Int       @default(0) @map("source_count")
+  /// Community index assigned by community detection (GraphRAG-style clustering).
+  community       Int?
+  topicId         String?   @map("topic_id")
+  /// Document from which this concept was extracted (for traceability).
+  sourceDocumentId String?  @map("source_document_id")
+  /// Index of the chunk within the source document where this concept appears.
+  sourceChunkIndex Int?     @map("source_chunk_index")
+  createdAt       DateTime  @default(now()) @map("created_at")
+  updatedAt       DateTime  @updatedAt @map("updated_at")
+
+  knowledgeBase KnowledgeBase   @relation(fields: [knowledgeBaseId], references: [id], onDelete: Cascade)
+  topic         KnowledgeTopic? @relation(fields: [topicId], references: [id], onDelete: SetNull)
+
+  @@index([knowledgeBaseId])
+  @@index([knowledgeBaseId, type])
+  @@index([sourceDocumentId])
+  @@map("knowledge_concepts")
+}
+
+// ============================================================================
+//  24. KnowledgeRelation — Graph Edge Between KB Entities
+//      Relation types: RELATED_TO | DERIVED_FROM | IS_A | PART_OF | CONTRADICTS | SUPPORTS
+// ============================================================================
+
+model KnowledgeRelation {
+  id              String    @id @default(cuid())
+  knowledgeBaseId String    @map("knowledge_base_id")
+  sourceType      String    // TOPIC | CONCEPT | DOCUMENT
+  sourceId        String    @map("source_id")
+  targetType      String
+  targetId        String    @map("target_id")
+  relationType    String    // RELATED_TO | DERIVED_FROM | IS_A | PART_OF | CONTRADICTS | SUPPORTS
+  strength        Float     @default(1.0)
+  /// Document from which this relation was extracted.
+  sourceDocumentId String?  @map("source_document_id")
+  createdAt       DateTime  @default(now()) @map("created_at")
+
+  knowledgeBase KnowledgeBase @relation(fields: [knowledgeBaseId], references: [id], onDelete: Cascade)
+
+  @@index([knowledgeBaseId])
+  @@index([knowledgeBaseId, sourceType, sourceId])
+  @@index([knowledgeBaseId, targetType, targetId])
+  @@index([sourceDocumentId])
+  @@map("knowledge_relations")
+}
+
+// ============================================================================
+//  25. KnowledgeDocumentTopic — Junction: Document ↔ Topic
+// ============================================================================
+
+model KnowledgeDocumentTopic {
+  documentId String   @map("document_id")
+  topicId    String   @map("topic_id")
+  createdAt  DateTime @default(now()) @map("created_at")
+
+  document KnowledgeDocument @relation(fields: [documentId], references: [id], onDelete: Cascade)
+  topic    KnowledgeTopic    @relation(fields: [topicId], references: [id], onDelete: Cascade)
+
+  @@id([documentId, topicId])
+  @@map("knowledge_document_topics")
+}
+

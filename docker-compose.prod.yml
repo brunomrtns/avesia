@@ -1,0 +1,325 @@
+# =============================================================================
+# docker-compose.prod.yml — Avesia Production Stack
+#
+# Usage:   docker compose -f docker-compose.prod.yml up -d
+# VPS path: /opt/avesia/docker-compose.prod.yml
+#
+# Services: postgres · redis · minio · api · web · worker · nginx
+#
+# Security hardening (every app service):
+#   - no-new-privileges: true
+#   - cap_drop: [ALL]
+#   - read_only: true (with tmpfs /tmp)
+#   - non-root user baked into Dockerfiles
+#
+# Only nginx exposes host ports (80/443).
+# All inter-service communication via avesia-net (external network).
+# =============================================================================
+
+services:
+  # ── PostgreSQL 16 ────────────────────────────────────────────────────────────
+  # NOT exposed to host. Only accessible within avesia-net.
+  # ────────────────────────────────────────────────────────────────────────────
+  postgres:
+    image: postgres:16-alpine
+    container_name: avesia-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB}
+    volumes:
+      - avesia-postgres-data:/var/lib/postgresql/data
+    networks:
+      - avesia-net
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 15s
+    security_opt:
+      - no-new-privileges:true
+    deploy:
+      resources:
+        limits:
+          cpus: "1.0"
+          memory: 1G
+        reservations:
+          cpus: "0.25"
+          memory: 256M
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "5"
+
+  # ── Redis 7 ──────────────────────────────────────────────────────────────────
+  # NOT exposed to host. Only accessible within avesia-net.
+  # ────────────────────────────────────────────────────────────────────────────
+  redis:
+    image: redis:7-alpine
+    container_name: avesia-redis
+    restart: unless-stopped
+    command: redis-server --appendonly yes --maxmemory 256mb --maxmemory-policy allkeys-lru
+    volumes:
+      - avesia-redis-data:/data
+    networks:
+      - avesia-net
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 10s
+    security_opt:
+      - no-new-privileges:true
+    deploy:
+      resources:
+        limits:
+          cpus: "0.5"
+          memory: 256M
+        reservations:
+          cpus: "0.10"
+          memory: 64M
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "5"
+
+  # ── MinIO (S3-compatible) ────────────────────────────────────────────────────
+  # NOT exposed to host. Only accessible within avesia-net.
+  # ────────────────────────────────────────────────────────────────────────────
+  minio:
+    image: minio/minio:latest
+    container_name: avesia-minio
+    restart: unless-stopped
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD}
+    volumes:
+      - avesia-minio-data:/data
+    networks:
+      - avesia-net
+    healthcheck:
+      test:
+        - "CMD-SHELL"
+        - >
+          mc alias set local http://localhost:9000 $${MINIO_ROOT_USER} $${MINIO_ROOT_PASSWORD}
+          && mc mb local/$${S3_BUCKET} --ignore-existing
+      interval: 15s
+      timeout: 10s
+      retries: 10
+      start_period: 20s
+    security_opt:
+      - no-new-privileges:true
+    deploy:
+      resources:
+        limits:
+          cpus: "0.5"
+          memory: 512M
+        reservations:
+          cpus: "0.10"
+          memory: 128M
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "5"
+
+  # ── API (Fastify) ────────────────────────────────────────────────────────────
+  # REST + WebSocket. Port 3100 internal only.
+  # Hardened: read_only rootfs, all caps dropped, /tmp as tmpfs.
+  # ────────────────────────────────────────────────────────────────────────────
+  api:
+    build:
+      context: .
+      dockerfile: apps/api/Dockerfile
+    image: avesia-api:latest
+    container_name: avesia-api
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      NODE_ENV: production
+    expose:
+      - "3100"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      minio:
+        condition: service_healthy
+    networks:
+      - avesia-net
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:3100/health"]
+      interval: 20s
+      timeout: 10s
+      retries: 5
+      start_period: 30s
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    read_only: true
+    tmpfs:
+      - /tmp:size=64M,noexec,nosuid,nodev
+    deploy:
+      resources:
+        limits:
+          cpus: "1.5"
+          memory: 512M
+        reservations:
+          cpus: "0.25"
+          memory: 128M
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "5"
+
+  # ── Worker (BullMQ consumer) ─────────────────────────────────────────────────
+  # Consumes transcription, analysis, summarization, notes-generation queues.
+  # Port 3102 internal only (metrics/health).
+  # ────────────────────────────────────────────────────────────────────────────
+  worker:
+    build:
+      context: .
+      dockerfile: apps/worker/Dockerfile
+    image: avesia-worker:latest
+    container_name: avesia-worker
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      NODE_ENV: production
+    expose:
+      - "3102"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      minio:
+        condition: service_healthy
+    networks:
+      - avesia-net
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:3102/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 30s
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    read_only: true
+    tmpfs:
+      - /tmp:size=128M,noexec,nosuid,nodev
+    deploy:
+      resources:
+        limits:
+          cpus: "2.0"
+          memory: 1G
+        reservations:
+          cpus: "0.5"
+          memory: 256M
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "5"
+
+  # ── Web (Vite SPA served by nginx) ───────────────────────────────────────────
+  # Static files served by internal nginx on port 3101.
+  # ────────────────────────────────────────────────────────────────────────────
+  web:
+    build:
+      context: .
+      dockerfile: apps/web/Dockerfile
+    image: avesia-web:latest
+    container_name: avesia-web
+    restart: unless-stopped
+    expose:
+      - "3101"
+    depends_on:
+      api:
+        condition: service_healthy
+    networks:
+      - avesia-net
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:3101"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 15s
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    read_only: true
+    tmpfs:
+      - /tmp:size=16M,noexec,nosuid,nodev
+    deploy:
+      resources:
+        limits:
+          cpus: "0.25"
+          memory: 64M
+        reservations:
+          cpus: "0.05"
+          memory: 16M
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "5"
+
+  # ── Nginx (reverse proxy — only service with host ports) ─────────────────────
+  # Terminates TLS, routes /avesia/api/ → api, /avesia/ → web.
+  # ────────────────────────────────────────────────────────────────────────────
+  nginx:
+    image: nginx:1.27-alpine
+    container_name: avesia-nginx
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./nginx/avesia.conf:/etc/nginx/conf.d/avesia.conf:ro
+      - avesia-nginx-logs:/var/log/nginx
+    depends_on:
+      api:
+        condition: service_healthy
+      web:
+        condition: service_healthy
+    networks:
+      - avesia-net
+    security_opt:
+      - no-new-privileges:true
+    deploy:
+      resources:
+        limits:
+          cpus: "0.5"
+          memory: 128M
+        reservations:
+          cpus: "0.10"
+          memory: 32M
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "5"
+
+# ──────────────────────────────────────────────────────────────────────────────
+networks:
+  avesia-net:
+    external: true # Created by setup script: docker network create avesia-net
+
+volumes:
+  avesia-postgres-data:
+  avesia-redis-data:
+  avesia-minio-data:
+  avesia-nginx-logs:

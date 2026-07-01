@@ -1,0 +1,23 @@
+{
+  "name": "@avesia/config",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Shared TypeScript, ESLint, and build configuration for the avesia monorepo.",
+  "license": "UNLICENSED",
+  "type": "module",
+  "exports": {
+    "./*": "./*.json",
+    "./tsconfig.base.json": "./tsconfig.base.json",
+    "./tsconfig.node.json": "./tsconfig.node.json",
+    "./tsconfig.react.json": "./tsconfig.react.json",
+    "./eslint.config.js": "./eslint.config.js",
+    "./eslint.react.js": "./eslint.react.js"
+  },
+  "files": [
+    "tsconfig.base.json",
+    "tsconfig.node.json",
+    "tsconfig.react.json",
+    "eslint.config.js",
+    "eslint.react.js"
+  ]
+}

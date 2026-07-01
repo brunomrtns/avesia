@@ -1,0 +1,47 @@
+{
+  "name": "@avesia/api",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Avesia REST API (Fastify).",
+  "license": "UNLICENSED",
+  "type": "module",
+  "scripts": {
+    "dev": "tsx watch src/server.ts",
+    "build": "tsc -p tsconfig.json",
+    "start": "node dist/server.js",
+    "lint": "eslint .",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "db:generate": "prisma generate",
+    "db:migrate": "prisma migrate dev",
+    "db:seed": "tsx prisma/seeds/index.ts",
+    "db:studio": "prisma studio"
+  },
+  "dependencies": {
+    "@avesia/ai-core": "workspace:*",
+    "@avesia/ai-providers": "workspace:*",
+    "@avesia/config": "workspace:*",
+    "@avesia/shared": "workspace:*",
+    "@avesia/types": "workspace:*",
+    "@fastify/cors": "^10.0.0",
+    "@fastify/helmet": "^13.0.0",
+    "@fastify/jwt": "^9.0.0",
+    "@fastify/multipart": "^10.0.0",
+    "@fastify/rate-limit": "^10.2.0",
+    "@fastify/websocket": "^11.0.0",
+    "@prisma/client": "^6.2.0",
+    "bullmq": "^5.79.2",
+    "fastify": "^5.2.0",
+    "fastify-plugin": "^6.0.0",
+    "ioredis": "^5.4.2",
+    "minio": "^8.0.3",
+    "zod": "^3.24.0"
+  },
+  "devDependencies": {
+    "@avesia/config": "workspace:*",
+    "@types/node": "^22.20.0",
+    "prisma": "^6.2.0",
+    "tsx": "^4.19.0",
+    "typescript": "^5.7.3"
+  }
+}
