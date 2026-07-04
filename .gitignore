@@ -19,6 +19,7 @@ next-env.d.ts
 # --- Environment ---
 .env
 .env.local
+.env.prod
 .env.*.local
 !.env.example
 !.env.*.example
@@ -108,4 +109,11 @@ celerybeat.pid
 # --- Devin / AI agent local files ---
 .devin/
 .claude/
+
+# --- Infrastructure docs (contain VPS IP, WireGuard config, etc) ---
+DEPLOY.md
+
+# --- Deploy/dev scripts (depend on my-vps, not part of the product code) ---
+deploy.sh
+dev.sh
 

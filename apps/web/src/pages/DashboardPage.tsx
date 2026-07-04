@@ -10,7 +10,7 @@ import {
 } from 'lucide-react';
 import { format } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
-import { Link } from 'react-router-dom';
+import { Link, useParams } from 'react-router-dom';
 import {
   Area,
   AreaChart,
@@ -199,6 +199,8 @@ function AIActivityCard({ totalSessions, completedSessions, totalPatients }: {
 // ─── Dashboard Page ─────────────────────────────────────────────────────────
 
 export function DashboardPage(): React.ReactNode {
+  const { orgSlug } = useParams<{ orgSlug: string }>();
+
   const patientsQuery = useQuery({
     queryKey: ['patients', 'stats'],
     queryFn: () => api.patients.list({ pageSize: 1 }),
@@ -250,7 +252,7 @@ export function DashboardPage(): React.ReactNode {
           </h1>
         </div>
         <Button asChild variant="gradient" size="sm">
-          <Link to="/sessions">
+          <Link to={`/${orgSlug}/sessions`}>
             <Plus className="h-4 w-4" />
             Nova Sessão
           </Link>
@@ -385,7 +387,7 @@ export function DashboardPage(): React.ReactNode {
               <p className="text-xs text-foreground-muted">Últimas sessões agendadas</p>
             </div>
             <Button asChild variant="ghost" size="sm">
-              <Link to="/sessions">Ver todas</Link>
+              <Link to={`/${orgSlug}/sessions`}>Ver todas</Link>
             </Button>
           </div>
           {sessionsQuery.isLoading ? (

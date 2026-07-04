@@ -9,7 +9,7 @@
 // ============================================================================
 
 import { useEffect, useRef, useCallback } from 'react';
-import { buildApiUrl, getAccessToken, type CopilotEvent, type CopilotSettings } from './api-client.js';
+import { buildApiUrl, ensureFreshAccessToken, type CopilotEvent, type CopilotSettings } from './api-client.js';
 
 interface UseSessionCopilotOptions {
   readonly sessionId: string | null | undefined;
@@ -47,20 +47,32 @@ export function useSessionCopilot({
   onErrorRef.current = onError;
   onSettingsUpdateRef.current = onSettingsUpdate;
 
+  // Stabilize enabled — only disable if it explicitly becomes false.
+  // This prevents useEffect re-runs when enabled goes undefined→true.
+  const enabledRef = useRef(enabled);
+  enabledRef.current = enabled;
+  // Only connect if we have a session ID. enabled is checked via ref
+  // to avoid reconnection when the value stabilizes from undefined→true.
   useEffect(() => {
-    if (!enabled || !sessionId) return;
-    const token = getAccessToken();
-    if (!token) return;
+    if (!sessionId) return;
+    // Check enabled at connection time, not as a dep
+    if (!enabledRef.current) return;
 
+    let cancelled = false;
     let socket: WebSocket | null = null;
     let reconnectTimer: ReturnType<typeof setTimeout> | null = null;
     let closedByUs = false;
     let attempt = 0;
 
-    const connect = (): void => {
+    const connect = async (): Promise<void> => {
+      // Ensure we have a fresh (non-expired) token before connecting
+      const token = await ensureFreshAccessToken();
+      if (cancelled || !token) return;
+
       socket = new WebSocket(buildCopilotWsUrl(sessionId, token));
 
       socket.onopen = () => {
+        console.log('[copilot-ws] connected', { sessionId, attempt });
         attempt = 0;
       };
 
@@ -86,26 +98,30 @@ export function useSessionCopilot({
         }
       };
 
-      socket.onclose = () => {
+      socket.onclose = (ev) => {
+        console.log('[copilot-ws] closed', { sessionId, code: ev.code, reason: ev.reason, wasClean: ev.wasClean, closedByUs, attempt });
         if (closedByUs) return;
         attempt += 1;
         const delay = Math.min(1000 * 2 ** attempt, 15_000);
-        reconnectTimer = setTimeout(connect, delay);
+        reconnectTimer = setTimeout(() => void connect(), delay);
       };
 
-      socket.onerror = () => {
+      socket.onerror = (ev) => {
+        console.error('[copilot-ws] error', { sessionId, ev });
         socket?.close();
       };
     };
 
-    connect();
+    void connect();
 
     return () => {
+      console.log('[copilot-ws] cleanup (useEffect re-run or unmount)', { sessionId, enabled });
+      cancelled = true;
       closedByUs = true;
       if (reconnectTimer) clearTimeout(reconnectTimer);
       socket?.close();
     };
-  }, [sessionId, enabled]);
+  }, [sessionId]);
 }
 
 // ── Helper hook for managing copilot settings via REST ─────────────────────

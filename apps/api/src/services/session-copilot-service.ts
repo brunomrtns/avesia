@@ -1,8 +1,10 @@
 // ============================================================================
 //  API — Session Copilot Service
 //
-//  Singleton that manages the SessionAIEngine instance and a shared Redis
-//  connection. Provides methods for:
+//  Manages SessionAIEngine instances per organization. Each org gets its own
+//  engine with its own AI provider config (from the DB, with fallback to env).
+//
+//  Provides methods for:
 //  - Notifying the engine when a segment is created (event-driven trigger).
 //  - Manually triggering a processing cycle.
 //  - Getting/updating copilot settings.
@@ -23,9 +25,11 @@ import {
   type SegmentInput,
   copilotChannel,
 } from '@avesia/ai-core';
+import { loadProviderConfigForOrg, getEmbeddingModelForOrg } from '../lib/org-ai-config.js';
 
-let _engine: SessionAIEngine | null = null;
+// ── Shared infra ─────────────────────────────────────────────────────────────
 let _redis: IORedis | null = null;
+let _sweepEngine: SessionAIEngine | null = null; // engine used for periodic sweep
 
 function getRedis(redisUrl: string): IORedis {
   if (!_redis) {
@@ -34,9 +38,58 @@ function getRedis(redisUrl: string): IORedis {
   return _redis;
 }
 
-function getEngine(prisma: PrismaClient, redisUrl: string): SessionAIEngine {
-  if (!_engine) {
+// ── Per-org engine cache ─────────────────────────────────────────────────────
+// Engines are cached by organizationId. Each has its own AI provider config.
+// Cache entries expire after 10 minutes of inactivity to pick up config changes.
+const ENGINE_CACHE = new Map<string, { engine: SessionAIEngine; lastUsed: number }>();
+const ENGINE_TTL_MS = 10 * 60 * 1000; // 10 minutes
+
+async function getEngineForOrg(
+  prisma: PrismaClient,
+  redisUrl: string,
+  organizationId: string,
+): Promise<SessionAIEngine> {
+  const cached = ENGINE_CACHE.get(organizationId);
+  if (cached) {
+    cached.lastUsed = Date.now();
+    return cached.engine;
+  }
+
+  const redis = getRedis(redisUrl);
+  const providerConfig = await loadProviderConfigForOrg(prisma, organizationId);
+  const providerCore = new AvesiaAICore(providerConfig);
+  const embeddingModel = await getEmbeddingModelForOrg(prisma, organizationId);
+  const aiCore = new AvesiaAICoreFacade(providerCore, {
+    ...(embeddingModel ? { embedModel: embeddingModel } : {}),
+    embedProviderConfig: providerConfig,
+  });
+  const engine = new SessionAIEngine(aiCore, prisma, redis);
+
+  ENGINE_CACHE.set(organizationId, { engine, lastUsed: Date.now() });
+
+  // Cleanup old entries
+  cleanupEngineCache();
+
+  return engine;
+}
+
+function cleanupEngineCache(): void {
+  const now = Date.now();
+  for (const [orgId, entry] of ENGINE_CACHE) {
+    if (now - entry.lastUsed > ENGINE_TTL_MS) {
+      ENGINE_CACHE.delete(orgId);
+    }
+  }
+}
+
+// ── Sweep engine (uses env config — processes all orgs) ──────────────────────
+// The periodic sweep needs an engine that works across orgs. We use the env
+// config as a baseline; individual org requests use per-org config.
+function getSweepEngine(prisma: PrismaClient, redisUrl: string): SessionAIEngine {
+  if (!_sweepEngine) {
     const redis = getRedis(redisUrl);
+    // Sweep engine uses env config — it's a fallback for sessions that
+    // didn't get processed by the event-driven path.
     const providerConfig = loadProviderConfigFromEnv();
     const providerCore = new AvesiaAICore(providerConfig);
     const embeddingModel = process.env.EMBEDDING_MODEL;
@@ -44,10 +97,12 @@ function getEngine(prisma: PrismaClient, redisUrl: string): SessionAIEngine {
       ...(embeddingModel ? { embedModel: embeddingModel } : {}),
       embedProviderConfig: providerConfig,
     });
-    _engine = new SessionAIEngine(aiCore, prisma, redis);
+    _sweepEngine = new SessionAIEngine(aiCore, prisma, redis);
   }
-  return _engine;
+  return _sweepEngine;
 }
+
+// ── Public API ───────────────────────────────────────────────────────────────
 
 /** Notify the engine that a new segment was created (non-blocking). */
 export function notifySegmentCreated(
@@ -58,13 +113,14 @@ export function notifySegmentCreated(
   segment: SegmentInput,
 ): void {
   // Fire-and-forget — the engine evaluates triggers and processes if warranted.
-  const engine = getEngine(prisma, redisUrl);
-  void engine.onSegmentCreated(sessionId, organizationId, segment).catch((err) => {
-    console.error(JSON.stringify({
-      level: 'error', component: 'CopilotService', step: 'onSegmentCreated',
-      sessionId, error: err instanceof Error ? err.message : 'unknown',
-    }));
-  });
+  void getEngineForOrg(prisma, redisUrl, organizationId)
+    .then((engine) => engine.onSegmentCreated(sessionId, organizationId, segment))
+    .catch((err) => {
+      console.error(JSON.stringify({
+        level: 'error', component: 'CopilotService', step: 'onSegmentCreated',
+        sessionId, organizationId, error: err instanceof Error ? err.message : 'unknown',
+      }));
+    });
 }
 
 /** Manually trigger a processing cycle. */
@@ -74,7 +130,7 @@ export async function processManually(
   sessionId: string,
   organizationId: string,
 ): Promise<CopilotCycleResult | null> {
-  const engine = getEngine(prisma, redisUrl);
+  const engine = await getEngineForOrg(prisma, redisUrl, organizationId);
   return engine.processManually(sessionId, organizationId);
 }
 
@@ -84,7 +140,8 @@ export async function getSettings(
   redisUrl: string,
   sessionId: string,
 ): Promise<CopilotSettings> {
-  const engine = getEngine(prisma, redisUrl);
+  // Settings don't depend on AI provider — use sweep engine (any engine works)
+  const engine = getSweepEngine(prisma, redisUrl);
   return engine.getSettings(sessionId);
 }
 
@@ -95,7 +152,7 @@ export async function updateSettings(
   sessionId: string,
   settings: Partial<CopilotSettings>,
 ): Promise<CopilotSettings> {
-  const engine = getEngine(prisma, redisUrl);
+  const engine = getSweepEngine(prisma, redisUrl);
   return engine.updateSettings(sessionId, settings);
 }
 
@@ -106,13 +163,13 @@ export function getCopilotRedis(redisUrl: string): IORedis {
 
 /** Start the periodic sweep that processes sessions with pending segments. */
 export function startCopilotSweep(prisma: PrismaClient, redisUrl: string, intervalMs?: number): void {
-  const engine = getEngine(prisma, redisUrl);
+  const engine = getSweepEngine(prisma, redisUrl);
   engine.startPeriodicSweep(intervalMs);
 }
 
 /** Stop the periodic sweep (on graceful shutdown). */
 export function stopCopilotSweep(prisma: PrismaClient, redisUrl: string): void {
-  const engine = getEngine(prisma, redisUrl);
+  const engine = getSweepEngine(prisma, redisUrl);
   engine.stopPeriodicSweep();
 }
 

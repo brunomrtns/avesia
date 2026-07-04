@@ -1,7 +1,7 @@
 # =============================================================================
 # apps/web/Dockerfile — Multi-stage build for Avesia Web (Vite React SPA)
 #
-# Stage 1: build Vite SPA → dist/
+# Stage 1: build Vite SPA → dist/ (with /avesia/ base path)
 # Stage 2: nginx:1.27-alpine serves static files on port 3101
 # =============================================================================
 
@@ -11,20 +11,26 @@ WORKDIR /app
 
 RUN corepack enable && corepack prepare pnpm@10.32.0 --activate
 
-# Copy workspace root files
-COPY package.json pnpm-workspace.yaml pnpm-lock.yaml* ./
-COPY apps/web/package.json ./apps/web/
-COPY packages/ ./packages/
-
-RUN pnpm install --frozen-lockfile || pnpm install
-
-# Copy full source
-COPY tsconfig*.json ./
+# Copy workspace root files + all source
+COPY package.json pnpm-workspace.yaml pnpm-lock.yaml* turbo.json ./
 COPY apps/web/ ./apps/web/
 COPY packages/ ./packages/
 
-# Build SPA (Vite outputs to apps/web/dist)
-RUN pnpm --filter "@avesia/..." build || pnpm --filter @avesia/web build || npx vite build --config apps/web/vite.config.ts
+# Install all workspace dependencies
+RUN pnpm install --frozen-lockfile || pnpm install
+
+# Build packages manually in dependency order
+# (pnpm -r has issues with .tsbuildinfo caching in Docker)
+RUN cd packages/types && pnpm exec tsc -p tsconfig.json
+RUN cd packages/shared && pnpm exec tsc -p tsconfig.json
+RUN cd packages/ai-providers && pnpm exec tsc -p tsconfig.build.json || true
+RUN cd packages/ai-core && pnpm exec tsc -p tsconfig.build.json || true
+
+# Build the web app with NODE_ENV=production (sets base: '/avesia/')
+RUN cd apps/web && NODE_ENV=production pnpm exec vite build
+
+# Verify dist was created
+RUN ls -la /app/apps/web/dist/
 
 # ── Stage 2: runtime (nginx) ──────────────────────────────────────────────────
 FROM nginx:1.27-alpine AS runtime
@@ -33,7 +39,7 @@ RUN rm -rf /usr/share/nginx/html/* /etc/nginx/conf.d/default.conf
 
 COPY --from=build /app/apps/web/dist /usr/share/nginx/html
 
-RUN echo 'server {\n\
+RUN printf 'server {\n\
     listen 3101;\n\
     server_name _;\n\
     root /usr/share/nginx/html;\n\
@@ -47,9 +53,9 @@ RUN echo 'server {\n\
         expires 1y;\n\
         add_header Cache-Control "public, immutable";\n\
     }\n\
-}' > /etc/nginx/conf.d/spa.conf
+}\n' > /etc/nginx/conf.d/spa.conf
 
 EXPOSE 3101
 
 HEALTHCHECK --interval=30s --timeout=10s --start-period=15s --retries=3 \
-  CMD wget --spider -q http://localhost:3101 || exit 1
+  CMD wget --spider -q http://127.0.0.1:3101 || exit 1

@@ -1,14 +1,14 @@
 // ============================================================================
-//  Avesia — NeuralIndicator
+//  Avesia — NeuralIndicator (v2 — Pulse Wave)
 //
-//  The signature AI activity indicator. A small animated node with orbiting
-//  particles that communicates "the AI is present and thinking." Used in:
-//  - Sidebar logo (always-on ambient presence)
-//  - Session Room header (active processing)
-//  - Dashboard AI cards (intelligence signal)
+//  A refined AI activity indicator. Instead of orbiting particles that look
+//  like a "stuck bug", this uses a smooth concentric pulse wave — like a
+//  heartbeat or sonar — that clearly communicates "alive and thinking."
 //
-//  Three states: idle (gentle breathing), active (orbiting particles),
-//  processing (intense neural pulse with expanding rings).
+//  Three states:
+//  - idle: gentle breathing glow (ambient presence)
+//  - active: steady pulse wave (AI is on, listening)
+//  - processing: rapid pulse + shimmer ring (AI is working)
 // ============================================================================
 
 import { motion } from 'motion/react';
@@ -22,10 +22,10 @@ interface NeuralIndicatorProps {
   className?: string;
 }
 
-const SIZE_CONFIG = {
-  sm: { container: 'h-5 w-5', node: 'h-1.5 w-1.5', orbit: 16 },
-  md: { container: 'h-8 w-8', node: 'h-2 w-2', orbit: 24 },
-  lg: { container: 'h-12 w-12', node: 'h-3 w-3', orbit: 36 },
+const SIZE_PX = {
+  sm: 20,
+  md: 32,
+  lg: 48,
 };
 
 export function NeuralIndicator({
@@ -33,88 +33,66 @@ export function NeuralIndicator({
   size = 'md',
   className,
 }: NeuralIndicatorProps): React.JSX.Element {
-  const config = SIZE_CONFIG[size];
+  const px = SIZE_PX[size];
+  const isProcessing = state === 'processing';
+  const isActive = state === 'active' || isProcessing;
 
   return (
     <div
-      className={cn(
-        'relative flex items-center justify-center',
-        config.container,
-        className,
-      )}
+      className={cn('relative flex items-center justify-center', className)}
+      style={{ width: px, height: px }}
     >
-      {/* Central node — always present, always breathing */}
+      {/* Concentric pulse waves — the signature animation */}
+      {isActive &&
+        [0, 1].map((ring) => (
+          <motion.div
+            key={ring}
+            className="absolute rounded-full border border-primary/40"
+            initial={{ scale: 0.3, opacity: 0 }}
+            animate={{ scale: 1.4, opacity: [0, 0.5, 0] }}
+            transition={{
+              duration: isProcessing ? 1.4 : 2.2,
+              repeat: Infinity,
+              delay: ring * (isProcessing ? 0.5 : 0.8),
+              ease: [0.4, 0, 0.2, 1],
+            }}
+            style={{ width: px, height: px }}
+          />
+        ))}
+
+      {/* Shimmer ring — only when processing (extra intensity) */}
+      {isProcessing && (
+        <motion.div
+          className="absolute rounded-full"
+          style={{
+            width: px,
+            height: px,
+            background: `conic-gradient(from 0deg, transparent, hsl(var(--primary) / 0.3), transparent)`,
+          }}
+          animate={{ rotate: 360 }}
+          transition={{ duration: 1.5, repeat: Infinity, ease: 'linear' }}
+        />
+      )}
+
+      {/* Core node — always present, breathing */}
       <motion.div
+        className="relative rounded-full bg-primary"
+        style={{
+          width: px * 0.3,
+          height: px * 0.3,
+          boxShadow: isActive
+            ? `0 0 ${px * 0.3}px hsl(var(--primary) / 0.5)`
+            : `0 0 ${px * 0.15}px hsl(var(--primary) / 0.3)`,
+        }}
         animate={{
-          scale: state === 'processing' ? [1, 1.3, 1] : [1, 1.1, 1],
-          opacity: [0.8, 1, 0.8],
+          scale: isProcessing ? [1, 1.25, 1] : [1, 1.1, 1],
+          opacity: [0.85, 1, 0.85],
         }}
         transition={{
-          duration: state === 'processing' ? 1.2 : 2.5,
+          duration: isProcessing ? 1 : 2.5,
           repeat: Infinity,
           ease: 'easeInOut',
         }}
-        className={cn(
-          'rounded-full bg-primary',
-          config.node,
-          state !== 'idle' && 'shadow-[0_0_8px_hsl(var(--primary-glow)/0.6)]',
-        )}
-      />
-
-      {/* Orbiting particles — visible when active or processing */}
-      {(state === 'active' || state === 'processing') && (
-        <>
-          {[0, 120, 240].map((angle, i) => (
-            <motion.div
-              key={i}
-              className="absolute h-1 w-1 rounded-full bg-primary/60"
-              animate={{
-                rotate: 360,
-              }}
-              transition={{
-                duration: state === 'processing' ? 2 : 4,
-                repeat: Infinity,
-                ease: 'linear',
-              }}
-              style={{
-                transformOrigin: `${config.orbit / 2}px center`,
-              }}
-              initial={{
-                rotate: angle,
-              }}
-            />
-          ))}
-        </>
-      )}
-
-      {/* Expanding rings — only when processing */}
-      {state === 'processing' && (
-        <>
-          {[0, 0.6].map((delay, i) => (
-            <motion.div
-              key={i}
-              className="absolute rounded-full border border-primary/30"
-              initial={{ scale: 0.5, opacity: 0.6 }}
-              animate={{ scale: 2, opacity: 0 }}
-              transition={{
-                duration: 1.8,
-                repeat: Infinity,
-                delay,
-                ease: 'easeOut',
-              }}
-              style={{
-                width: config.orbit,
-                height: config.orbit,
-              }}
-            />
-          ))}
-        </>
-      )}
-
-      {/* Ambient glow — always present */}
-      <div
-        className="absolute inset-0 rounded-full bg-primary/10 blur-md"
-        style={{ opacity: state === 'idle' ? 0.3 : 0.6 }}
       />
     </div>
   );

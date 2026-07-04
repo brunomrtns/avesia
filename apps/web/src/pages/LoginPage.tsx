@@ -5,9 +5,11 @@ import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
 import { toast } from 'sonner';
 import { motion } from 'motion/react';
-import { Brain, Eye, EyeOff, Loader2, Sparkles } from 'lucide-react';
+import { Eye, EyeOff, Loader2, Sparkles } from 'lucide-react';
 
 import { AuthContext } from '@/lib/auth-context';
+import { api } from '@/lib/api-client';
+import { BrandLogo, BRAND } from '@/components/branding/BrandLogo';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -39,7 +41,9 @@ export function LoginPage(): React.ReactNode {
   const onSubmit = async (values: LoginFormValues): Promise<void> => {
     try {
       await auth.login(values.email, values.password);
-      navigate('/', { replace: true });
+      // Redirect to the org-scoped dashboard
+      const slug = auth.orgSlug ?? (await api.auth.me()).organization?.slug;
+      navigate(slug ? `/${slug}` : '/', { replace: true });
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Erro ao fazer login. Tente novamente.';
       toast.error(message);
@@ -61,19 +65,15 @@ export function LoginPage(): React.ReactNode {
         className="relative w-full max-w-md"
       >
         {/* Branding */}
-        <div className="mb-8 text-center">
+        <div className="mb-8 flex flex-col items-center text-center">
           <motion.div
             initial={{ scale: 0.8, opacity: 0 }}
             animate={{ scale: 1, opacity: 1 }}
             transition={{ duration: 0.5, delay: 0.1, ease: [0.34, 1.56, 0.64, 1] }}
-            className="mx-auto mb-4 flex h-16 w-16 items-center justify-center rounded-2xl bg-gradient-primary shadow-glow"
           >
-            <Brain className="h-8 w-8 text-white" />
+            <BrandLogo variant="full" size="lg" />
           </motion.div>
-          <h1 className="text-3xl font-bold tracking-tight text-foreground">
-            Avesia
-          </h1>
-          <p className="mt-1.5 text-sm text-foreground-secondary">
+          <p className="mt-3 text-sm text-foreground-secondary">
             Plataforma de apoio clínico com IA
           </p>
         </div>
@@ -149,7 +149,7 @@ export function LoginPage(): React.ReactNode {
         </div>
 
         <p className="mt-6 text-center text-xs text-foreground-muted">
-          © {new Date().getFullYear()} Avesia. Todos os direitos reservados.
+          © {new Date().getFullYear()} {BRAND.name}. Todos os direitos reservados.
         </p>
       </motion.div>
     </div>

@@ -7,12 +7,12 @@ import { uploadFile } from '../lib/storage.js';
 import { enqueueCeleryTask } from '../lib/celery-bridge.js';
 import {
   AvesiaAICore,
-  loadProviderConfigFromEnv,
 } from '@avesia/ai-providers';
 import {
   AvesiaAICoreFacade,
   RAGOrchestrator,
 } from '@avesia/ai-core';
+import { loadProviderConfigForOrg, getEmbeddingModelForOrg } from '../lib/org-ai-config.js';
 
 const knowledgeBaseRoutes: FastifyPluginAsync = async (app): Promise<void> => {
   app.addHook('onRequest', requireAuth);
@@ -658,9 +658,9 @@ const knowledgeBaseRoutes: FastifyPluginAsync = async (app): Promise<void> => {
       if (!kb) throw new NotFoundError('KnowledgeBase', id);
 
       // Wire the AI facade + RAG orchestrator (provider-agnostic).
-      const providerConfig = loadProviderConfigFromEnv();
+      const providerConfig = await loadProviderConfigForOrg(app.prisma, request.organizationId);
       const providerCore = new AvesiaAICore(providerConfig);
-      const embeddingModel = process.env.EMBEDDING_MODEL;
+      const embeddingModel = await getEmbeddingModelForOrg(app.prisma, request.organizationId);
       const aiCore = new AvesiaAICoreFacade(providerCore, {
         ...(embeddingModel ? { embedModel: embeddingModel } : {}),
         embedProviderConfig: providerConfig,

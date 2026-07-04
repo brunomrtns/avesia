@@ -1,7 +1,7 @@
 import type { FastifyPluginAsync, FastifyRequest } from 'fastify';
 import { z } from 'zod';
 
-import { NotFoundError } from '@avesia/shared';
+import { ConflictError, NotFoundError } from '@avesia/shared';
 import { updateOrganizationSchema } from '@avesia/shared';
 
 import { requireAuth } from '../plugins/auth.js';
@@ -39,6 +39,17 @@ const organizationRoutes: FastifyPluginAsync = async (app): Promise<void> => {
 
       if (!existing) {
         throw new NotFoundError('Organization', request.organizationId);
+      }
+
+      // Check slug uniqueness if changing
+      if (body.slug !== undefined && body.slug !== existing.slug) {
+        const slugConflict = await app.prisma.organization.findUnique({
+          where: { slug: body.slug },
+          select: { id: true },
+        });
+        if (slugConflict) {
+          throw new ConflictError('Slug already in use by another organization');
+        }
       }
 
       const org = await app.prisma.organization.update({

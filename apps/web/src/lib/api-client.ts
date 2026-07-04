@@ -111,6 +111,40 @@ export function getAccessToken(): string | null {
   return accessToken;
 }
 
+/**
+ * Returns a valid (non-expired) access token, refreshing if necessary.
+ * Use this for WebSocket connections where we can't rely on the 401-retry
+ * mechanism (WS doesn't support retry after auth failure).
+ */
+export async function ensureFreshAccessToken(): Promise<string | null> {
+  // Check if current token is still valid (with 30s buffer)
+  if (accessToken) {
+    try {
+      const payload = JSON.parse(atob(accessToken.split('.')[1] ?? ''));
+      const expiresAt = payload.exp * 1000; // seconds → ms
+      const now = Date.now();
+      const remaining = expiresAt - now;
+      console.log('[auth] token check', { remaining: Math.round(remaining / 1000) + 's', valid: remaining > 30_000 });
+      if (remaining > 30_000) {
+        return accessToken; // Still valid
+      }
+    } catch (e) {
+      console.warn('[auth] token decode failed', e);
+    }
+  }
+
+  // Token expired or missing — refresh
+  console.log('[auth] refreshing token...');
+  if (!refreshPromise) {
+    refreshPromise = refreshAccessToken().finally(() => {
+      refreshPromise = null;
+    });
+  }
+  const result = await refreshPromise;
+  console.log('[auth] refresh result', result ? 'success' : 'failed');
+  return result;
+}
+
 export function setRefreshToken(token: string | null): void {
   if (token) {
     localStorage.setItem(REFRESH_TOKEN_KEY, token);
@@ -239,7 +273,7 @@ export async function request<T>(path: string, options: RequestOptions = {}): Pr
 
     setAccessToken(null);
     setRefreshToken(null);
-    window.location.href = '/login';
+    window.location.href = `${import.meta.env.BASE_URL}login`;
     throw new ApiError(401, 'Session expired', null);
   }
 
@@ -329,5 +363,21 @@ export const api = {
 
   health: {
     check: <T>(): Promise<T> => request<T>('/health/ai'),
+  },
+
+  aiProviders: {
+    list: <T>(): Promise<T> => request<T>('/ai-providers'),
+    create: <T>(data: Record<string, unknown>): Promise<T> =>
+      request<T>('/ai-providers', { method: 'POST', body: data }),
+    update: <T>(id: string, data: Record<string, unknown>): Promise<T> =>
+      request<T>(`/ai-providers/${id}`, { method: 'PUT', body: data }),
+    delete: (id: string): Promise<void> =>
+      request<void>(`/ai-providers/${id}`, { method: 'DELETE' }),
+    activate: <T>(id: string): Promise<T> =>
+      request<T>(`/ai-providers/${id}/activate`, { method: 'PUT' }),
+    setFallback: <T>(id: string): Promise<T> =>
+      request<T>(`/ai-providers/${id}/fallback`, { method: 'PUT' }),
+    test: <T>(id: string): Promise<T> =>
+      request<T>(`/ai-providers/${id}/test`, { method: 'POST' }),
   },
 };

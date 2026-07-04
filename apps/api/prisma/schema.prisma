@@ -56,6 +56,7 @@ model Organization {
   aiContextDocuments AIContextDocument[]
   professionalPatients ProfessionalPatient[]
   knowledgeBases KnowledgeBase[]
+  aiProviderConfigs AIProviderConfig[]
 
   @@map("organizations")
 }
@@ -829,5 +830,44 @@ model KnowledgeDocumentTopic {
 
   @@id([documentId, topicId])
   @@map("knowledge_document_topics")
+}
+
+// ============================================================================
+//  AI Provider Config — Per-clinic AI provider settings
+//  Each clinic can configure multiple providers (NVIDIA NIM, OpenRouter, Ollama)
+//  and activate one for chat. Embeddings always use the org's configured
+//  embedding model (defaults to env EMBEDDING_MODEL).
+// ============================================================================
+
+model AIProviderConfig {
+  id             String   @id @default(cuid())
+  organizationId String   @map("organization_id")
+  /// Provider type: nvidia-nim | openrouter | ollama
+  provider       String
+  /// Human-readable label (e.g. "NVIDIA NIM", "Ollama Local")
+  label          String
+  /// API key (encrypted at rest by app layer; nullable for ollama)
+  apiKey         String?  @map("api_key")
+  /// Base URL (e.g. https://integrate.api.nvidia.com/v1)
+  baseUrl        String?  @map("base_url")
+  /// Default chat model (e.g. meta/llama-3.1-8b-instruct)
+  model          String
+  /// Embedding model (e.g. nvidia/llama-nemotron-embed-1b-v2)
+  embeddingModel String?  @map("embedding_model")
+  /// Is this the active (primary) provider for chat?
+  isActive       Boolean  @default(false) @map("is_active")
+  /// Is this the fallback provider? Used when primary is offline
+  isFallback     Boolean  @default(false) @map("is_fallback")
+  /// Last health check status: ok | fail | unknown
+  lastStatus     String   @default("unknown") @map("last_status")
+  lastCheckedAt  DateTime? @map("last_checked_at")
+  createdAt      DateTime @default(now()) @map("created_at")
+  updatedAt      DateTime @updatedAt @map("updated_at")
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@unique([organizationId, provider])
+  @@index([organizationId])
+  @@map("ai_provider_configs")
 }
 

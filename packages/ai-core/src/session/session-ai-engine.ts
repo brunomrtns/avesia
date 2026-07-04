@@ -604,10 +604,11 @@ export class SessionAIEngine {
 
 // ── Helpers (duplicated from session-memory for engine-internal use) ────────
 
-function dedupeStrings(items: readonly string[]): string[] {
+function dedupeStrings(items: readonly unknown[]): string[] {
   const seen = new Set<string>();
   const out: string[] = [];
   for (const item of items) {
+    if (typeof item !== 'string') continue;
     const lower = item.toLowerCase().trim();
     if (lower && !seen.has(lower)) {
       seen.add(lower);

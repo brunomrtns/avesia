@@ -10,6 +10,7 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { AudioConfigPanel } from '@/components/session-room/AudioConfigPanel';
 import { InsightsPanel } from '@/components/session-room/InsightsPanel';
 import { RecordingControls } from '@/components/session-room/RecordingControls';
+import { ResizableSplit } from '@/components/session-room/ResizableSplit';
 import { TranscriptPanel } from '@/components/session-room/TranscriptPanel';
 import { useSessionStore } from '@/stores/session-store';
 import type { ClinicalSession } from '@avesia/types';
@@ -21,7 +22,7 @@ const STATUS_LABELS: Record<string, { label: string; variant: 'warning' | 'succe
 };
 
 export function SessionRoomPage(): React.ReactNode {
-  const { id } = useParams<{ id: string }>();
+  const { id, orgSlug } = useParams<{ id: string; orgSlug: string }>();
   const navigate = useNavigate();
   const queryClient = useQueryClient();
 
@@ -40,6 +41,8 @@ export function SessionRoomPage(): React.ReactNode {
   const isDualMicModeRef = useRef(store.isDualMicMode);
   const therapistVolumeRef = useRef(0);
   const patientVolumeRef = useRef(0);
+  const isRecordingRef = useRef(store.isRecording);
+  const isPausedRef = useRef(store.isPaused);
 
   useEffect(() => {
     activeSpeakerRef.current = store.activeSpeaker;
@@ -53,6 +56,12 @@ export function SessionRoomPage(): React.ReactNode {
   useEffect(() => {
     patientVolumeRef.current = store.patientVolume;
   }, [store.patientVolume]);
+  useEffect(() => {
+    isRecordingRef.current = store.isRecording;
+  }, [store.isRecording]);
+  useEffect(() => {
+    isPausedRef.current = store.isPaused;
+  }, [store.isPaused]);
 
   // Load session
   const sessionQuery = useQuery({
@@ -116,14 +125,23 @@ export function SessionRoomPage(): React.ReactNode {
     },
   });
 
-  // Load audio devices on mount
+  // Reset store when leaving the session room (prevents stale state from a previous session)
+  useEffect(() => {
+    return () => {
+      // Only reset recording state — keep copilot settings (loaded per session)
+      store.setIsRecording(false);
+      store.setIsPaused(false);
+      store.setSeconds(0);
+      store.clearCopilotItems();
+      store.setCopilotError(null);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // Load audio devices on mount (without requesting mic permission)
   useEffect(() => {
     async function loadDevices() {
       try {
-        await navigator.mediaDevices
-          .getUserMedia({ audio: true })
-          .then((stream) => stream.getTracks().forEach((t) => t.stop()))
-          .catch(() => {});
         const allDevices = await navigator.mediaDevices.enumerateDevices();
         const audioInputs = allDevices.filter((d) => d.kind === 'audioinput');
         store.setDevices(audioInputs);
@@ -278,7 +296,8 @@ export function SessionRoomPage(): React.ReactNode {
     };
 
     recognition.onend = () => {
-      if (store.isRecording && !store.isPaused) {
+      // Use refs to avoid stale closure — prevents infinite restart loop
+      if (isRecordingRef.current && !isPausedRef.current) {
         try { recognition.start(); } catch (e) { console.warn('Speech restart error:', e); }
       }
     };
@@ -296,12 +315,21 @@ export function SessionRoomPage(): React.ReactNode {
   }, [store.isRecording, store.isPaused]);
 
   // Handlers
-  const handleStart = () => {
+  const handleStart = async () => {
+    // Request microphone permission with user gesture
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      stream.getTracks().forEach((t) => t.stop());
+    } catch {
+      toast.error('Acesso ao microfone é necessário para a gravação. Permita o acesso e tente novamente.');
+      return;
+    }
+    const isResuming = session?.status === 'IN_PROGRESS';
     updateStatusMutation.mutate('IN_PROGRESS');
     store.setIsRecording(true);
     store.setIsPaused(false);
-    store.setSeconds(0);
-    toast.success('Sessão iniciada! Escutando microfone...');
+    if (!isResuming) store.setSeconds(0);
+    toast.success(isResuming ? 'Atendimento retomado! Escutando microfone...' : 'Sessão iniciada! Escutando microfone...');
   };
 
   const handlePauseToggle = () => {
@@ -314,7 +342,7 @@ export function SessionRoomPage(): React.ReactNode {
     store.setIsRecording(false);
     updateStatusMutation.mutate('COMPLETED');
     toast.success('Sessão encerrada com sucesso!');
-    navigate('/sessions');
+    navigate(`/${orgSlug}/sessions`);
   };
 
   if (sessionQuery.isLoading) {
@@ -333,7 +361,7 @@ export function SessionRoomPage(): React.ReactNode {
     return (
       <div className="flex h-[60vh] flex-col items-center justify-center text-center">
         <h2 className="text-xl font-bold text-destructive">Sessão não encontrada</h2>
-        <Link to="/sessions" className="mt-4 text-primary hover:underline">
+        <Link to={`/${orgSlug}/sessions`} className="mt-4 text-primary hover:underline">
           Voltar para sessões
         </Link>
       </div>
@@ -348,7 +376,7 @@ export function SessionRoomPage(): React.ReactNode {
       <div className="flex flex-col gap-4 border-b border-border pb-4 sm:flex-row sm:items-center sm:justify-between">
         <div className="flex items-center gap-3">
           <Link
-            to="/sessions"
+            to={`/${orgSlug}/sessions`}
             className="rounded-lg p-2 text-foreground-secondary transition-colors hover:bg-surface-elevated hover:text-foreground"
           >
             <ArrowLeft className="h-5 w-5" />
@@ -378,27 +406,30 @@ export function SessionRoomPage(): React.ReactNode {
       {/* Audio config */}
       {store.isConfigOpen && <AudioConfigPanel />}
 
-      {/* Main workspace */}
-      <div className="flex flex-1 gap-4 overflow-hidden min-h-0">
-        <TranscriptPanel
-          segments={segments}
-          isRecording={store.isRecording}
-          isPaused={store.isPaused}
-          seconds={store.seconds}
-          speechSupported={store.speechSupported}
-          sessionStatus={session.status}
-          onSimulateSpeech={() => transcribeChunkMutation.mutate()}
-          onDiarize={() => diarizeMutation.mutate()}
-          isSimulating={transcribeChunkMutation.isPending}
-          isDiarizing={diarizeMutation.isPending}
-        />
-
-        <InsightsPanel
-          sessionId={session.id}
-          hasSegments={segments.length > 0}
-          onGenerate={() => getInsightsMutation.mutate()}
-        />
-      </div>
+      {/* Main workspace — resizable 50/50 split */}
+      <ResizableSplit
+        left={
+          <TranscriptPanel
+            segments={segments}
+            isRecording={store.isRecording}
+            isPaused={store.isPaused}
+            seconds={store.seconds}
+            speechSupported={store.speechSupported}
+            sessionStatus={session.status}
+            onSimulateSpeech={() => transcribeChunkMutation.mutate()}
+            onDiarize={() => diarizeMutation.mutate()}
+            isSimulating={transcribeChunkMutation.isPending}
+            isDiarizing={diarizeMutation.isPending}
+          />
+        }
+        right={
+          <InsightsPanel
+            sessionId={session.id}
+            hasSegments={segments.length > 0}
+            onGenerate={() => getInsightsMutation.mutate()}
+          />
+        }
+      />
     </div>
   );
 }

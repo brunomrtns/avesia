@@ -78,6 +78,9 @@ const authRoutes: FastifyPluginAsync = async (app): Promise<void> => {
 
     return reply.status(200).send({
       user: stripPasswordHash(user as unknown as Record<string, unknown>),
+      organization: user.organization
+        ? { slug: user.organization.slug, name: user.organization.name }
+        : null,
       tokens,
     });
   });
@@ -225,14 +228,19 @@ const authRoutes: FastifyPluginAsync = async (app): Promise<void> => {
     async (request: FastifyRequest, _reply) => {
       const user = await app.prisma.user.findUnique({
         where: { id: request.userId },
-        include: { professional: true },
+        include: { organization: true, professional: true },
       });
 
       if (!user) {
         throw new AuthError('User not found');
       }
 
-      return { user: stripPasswordHash(user as unknown as Record<string, unknown>) };
+      return {
+        user: stripPasswordHash(user as unknown as Record<string, unknown>),
+        organization: user.organization
+          ? { slug: user.organization.slug, name: user.organization.name }
+          : null,
+      };
     },
   );
 

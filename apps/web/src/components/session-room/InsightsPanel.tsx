@@ -131,7 +131,7 @@ export function InsightsPanel({ sessionId, hasSegments, onGenerate }: InsightsPa
     copilotStatus === 'processing' ? 'processing' : copilotEnabled ? 'active' : 'idle';
 
   return (
-    <div className="flex w-[400px] min-w-[340px] flex-col overflow-hidden rounded-lg border border-border bg-surface shadow-sm">
+    <div className="flex h-full min-w-0 flex-col overflow-hidden rounded-lg border border-border bg-surface shadow-sm">
       {/* Header — ambient AI presence */}
       <div className="relative border-b border-border bg-surface-elevated/30 px-4 py-3">
         {/* Subtle neural mesh in header */}

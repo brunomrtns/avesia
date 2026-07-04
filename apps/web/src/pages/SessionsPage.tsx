@@ -6,7 +6,7 @@ import { z } from 'zod';
 import { toast } from 'sonner';
 import { format } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
-import { Link } from 'react-router-dom';
+import { Link, useParams } from 'react-router-dom';
 import { AuthContext } from '@/lib/auth-context';
 import {
   Plus,
@@ -85,6 +85,7 @@ const STATUS_VARIANTS: Record<string, 'default' | 'warning' | 'success' | 'destr
 };
 
 export function SessionsPage(): React.ReactNode {
+  const { orgSlug } = useParams<{ orgSlug: string }>();
   const queryClient = useQueryClient();
   const [page, setPage] = useState(1);
   const [statusFilter, setStatusFilter] = useState<string>('');
@@ -276,7 +277,7 @@ export function SessionsPage(): React.ReactNode {
                       </Badge>
                     </TableCell>
                     <TableCell className="whitespace-nowrap text-right">
-                      <Link to={`/sessions/${s.id}`}>
+                      <Link to={`/${orgSlug}/sessions/${s.id}`}>
                         <Button variant="outline" size="sm" className="h-8">
                           {s.status === 'SCHEDULED' || s.status === 'IN_PROGRESS' ? 'Atender' : 'Ver Detalhes'}
                         </Button>

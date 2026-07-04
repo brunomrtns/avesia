@@ -1,0 +1,26 @@
+[Unit]
+Description=Avesia AI Gateway (Ollama → NIM failover)
+After=network.target docker.service
+Wants=docker.service
+
+[Service]
+Type=simple
+# Secrets are loaded from /opt/avesia/.env (EnvironmentFile)
+# The .env uses NVIDIA_NIM_API_KEY (same as the API container).
+# We map it to NVIDIA_NIM_KEY which is what ai-gateway.js expects.
+# Required env vars: NVIDIA_NIM_API_KEY
+# Optional env vars: GATEWAY_PORT, OLLAMA_URL, NVIDIA_NIM_URL, HEALTH_INTERVAL
+EnvironmentFile=/opt/avesia/.env
+ExecStart=/usr/bin/docker run --rm --name avesia-ai-gateway --network host \
+  -e GATEWAY_PORT=${GATEWAY_PORT:-11435} \
+  -e OLLAMA_URL=${OLLAMA_URL:-http://127.0.0.1:11434} \
+  -e NVIDIA_NIM_URL=${NVIDIA_NIM_URL:-https://integrate.api.nvidia.com/v1} \
+  -e NVIDIA_NIM_KEY=${NVIDIA_NIM_API_KEY} \
+  -e HEALTH_INTERVAL=${HEALTH_INTERVAL:-10000} \
+  -v /opt/avesia/scripts/ai-gateway.js:/app/gateway.js:ro \
+  -w /app node:22-alpine node gateway.js
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

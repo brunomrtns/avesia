@@ -42,8 +42,14 @@ export interface LoginRequest {
   readonly password: string;
 }
 
+export interface OrgInfo {
+  readonly slug: string;
+  readonly name: string;
+}
+
 export interface LoginResponse {
   readonly user: User;
+  readonly organization: OrgInfo | null;
   readonly tokens: AuthTokens;
 }
 
@@ -57,6 +63,7 @@ export interface RefreshResponse {
 
 export interface MeResponse {
   readonly user: User;
+  readonly organization: OrgInfo | null;
 }
 
 export interface UpdateOrganizationRequest {

@@ -4,24 +4,27 @@
 # Usage:   docker compose -f docker-compose.prod.yml up -d
 # VPS path: /opt/avesia/docker-compose.prod.yml
 #
-# Services: postgres · redis · minio · api · web · worker · nginx
+# Services: postgres · redis · minio · api · web · worker
+#
+# NOTE: No nginx service — the Trivestia nginx (trivestia-nginx) handles
+#       reverse proxying for Avesia via /avesia/ path prefix.
+#       The api and web containers are connected to trivestia-net so
+#       trivestia-nginx can reach them.
 #
 # Security hardening (every app service):
 #   - no-new-privileges: true
 #   - cap_drop: [ALL]
 #   - read_only: true (with tmpfs /tmp)
 #   - non-root user baked into Dockerfiles
-#
-# Only nginx exposes host ports (80/443).
-# All inter-service communication via avesia-net (external network).
 # =============================================================================
 
 services:
-  # ── PostgreSQL 16 ────────────────────────────────────────────────────────────
-  # NOT exposed to host. Only accessible within avesia-net.
+  # ── PostgreSQL 16 + pgvector ─────────────────────────────────────────────────
+  # NOT exposed to host. Only accessible within avesia-net + trivestia-net.
+  # Uses pgvector/pgvector image for vector similarity search.
   # ────────────────────────────────────────────────────────────────────────────
   postgres:
-    image: postgres:16-alpine
+    image: pgvector/pgvector:pg16
     container_name: avesia-postgres
     restart: unless-stopped
     environment:
@@ -104,11 +107,7 @@ services:
     networks:
       - avesia-net
     healthcheck:
-      test:
-        - "CMD-SHELL"
-        - >
-          mc alias set local http://localhost:9000 $${MINIO_ROOT_USER} $${MINIO_ROOT_PASSWORD}
-          && mc mb local/$${S3_BUCKET} --ignore-existing
+      test: ["CMD", "curl", "-sf", "http://localhost:9000/minio/health/live"]
       interval: 15s
       timeout: 10s
       retries: 10
@@ -131,7 +130,7 @@ services:
 
   # ── API (Fastify) ────────────────────────────────────────────────────────────
   # REST + WebSocket. Port 3100 internal only.
-  # Hardened: read_only rootfs, all caps dropped, /tmp as tmpfs.
+  # Connected to BOTH avesia-net and trivestia-net (so trivestia-nginx can proxy).
   # ────────────────────────────────────────────────────────────────────────────
   api:
     build:
@@ -143,6 +142,7 @@ services:
     env_file: .env
     environment:
       NODE_ENV: production
+      PORT: 3100
     expose:
       - "3100"
     depends_on:
@@ -154,12 +154,13 @@ services:
         condition: service_healthy
     networks:
       - avesia-net
+      - trivestia-net
     healthcheck:
-      test: ["CMD", "wget", "-qO-", "http://localhost:3100/health"]
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1:3100/health"]
       interval: 20s
       timeout: 10s
       retries: 5
-      start_period: 30s
+      start_period: 40s
     security_opt:
       - no-new-privileges:true
     cap_drop:
@@ -181,22 +182,20 @@ services:
         max-size: "10m"
         max-file: "5"
 
-  # ── Worker (BullMQ consumer) ─────────────────────────────────────────────────
-  # Consumes transcription, analysis, summarization, notes-generation queues.
-  # Port 3102 internal only (metrics/health).
+  # ── Worker (Python Celery) ───────────────────────────────────────────────────
+  # Consumes transcription, analysis, summarization, notes-generation, rag-indexing queues.
+  # Port 3102 internal only (health check server).
   # ────────────────────────────────────────────────────────────────────────────
   worker:
     build:
       context: .
-      dockerfile: apps/worker/Dockerfile
+      dockerfile: apps/worker-python/Dockerfile
     image: avesia-worker:latest
     container_name: avesia-worker
     restart: unless-stopped
     env_file: .env
     environment:
       NODE_ENV: production
-    expose:
-      - "3102"
     depends_on:
       postgres:
         condition: service_healthy
@@ -207,18 +206,19 @@ services:
     networks:
       - avesia-net
     healthcheck:
-      test: ["CMD", "wget", "-qO-", "http://localhost:3102/health"]
+      test: ["CMD", "curl", "-sf", "http://localhost:3102/health"]
       interval: 30s
       timeout: 10s
       retries: 5
-      start_period: 30s
+      start_period: 40s
     security_opt:
       - no-new-privileges:true
     cap_drop:
       - ALL
-    read_only: true
+    # NOTE: read_only disabled for worker — Celery/spaCy/NLTK need
+    # writable paths for temp files, model caches, and pickle serialization.
     tmpfs:
-      - /tmp:size=128M,noexec,nosuid,nodev
+      - /tmp:size=256M,noexec,nosuid,nodev
     deploy:
       resources:
         limits:
@@ -235,6 +235,7 @@ services:
 
   # ── Web (Vite SPA served by nginx) ───────────────────────────────────────────
   # Static files served by internal nginx on port 3101.
+  # Connected to BOTH avesia-net and trivestia-net (so trivestia-nginx can proxy).
   # ────────────────────────────────────────────────────────────────────────────
   web:
     build:
@@ -250,17 +251,17 @@ services:
         condition: service_healthy
     networks:
       - avesia-net
+      - trivestia-net
     healthcheck:
-      test: ["CMD", "wget", "-qO-", "http://localhost:3101"]
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1:3101"]
       interval: 30s
       timeout: 10s
       retries: 3
       start_period: 15s
     security_opt:
       - no-new-privileges:true
-    cap_drop:
-      - ALL
-    read_only: true
+    # NOTE: read_only disabled for nginx — it needs to write to /var/cache/nginx
+    # and the entrypoint script chowns those directories on startup.
     tmpfs:
       - /tmp:size=16M,noexec,nosuid,nodev
     deploy:
@@ -277,49 +278,14 @@ services:
         max-size: "10m"
         max-file: "5"
 
-  # ── Nginx (reverse proxy — only service with host ports) ─────────────────────
-  # Terminates TLS, routes /avesia/api/ → api, /avesia/ → web.
-  # ────────────────────────────────────────────────────────────────────────────
-  nginx:
-    image: nginx:1.27-alpine
-    container_name: avesia-nginx
-    restart: unless-stopped
-    ports:
-      - "80:80"
-      - "443:443"
-    volumes:
-      - ./nginx/avesia.conf:/etc/nginx/conf.d/avesia.conf:ro
-      - avesia-nginx-logs:/var/log/nginx
-    depends_on:
-      api:
-        condition: service_healthy
-      web:
-        condition: service_healthy
-    networks:
-      - avesia-net
-    security_opt:
-      - no-new-privileges:true
-    deploy:
-      resources:
-        limits:
-          cpus: "0.5"
-          memory: 128M
-        reservations:
-          cpus: "0.10"
-          memory: 32M
-    logging:
-      driver: json-file
-      options:
-        max-size: "10m"
-        max-file: "5"
-
 # ──────────────────────────────────────────────────────────────────────────────
 networks:
   avesia-net:
-    external: true # Created by setup script: docker network create avesia-net
+    external: true    # Created by setup: docker network create avesia-net
+  trivestia-net:
+    external: true    # Already exists (created by trivestia setup)
 
 volumes:
   avesia-postgres-data:
   avesia-redis-data:
   avesia-minio-data:
-  avesia-nginx-logs:

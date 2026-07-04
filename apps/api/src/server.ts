@@ -17,6 +17,7 @@ import sessionRoutes from './routes/sessions.js';
 import organizationRoutes from './routes/organization.js';
 import healthRoutes from './routes/health.js';
 import knowledgeBaseRoutes from './routes/knowledge-base.js';
+import aiProviderRoutes from './routes/ai-providers.js';
 import { startCopilotSweep, stopCopilotSweep } from './services/session-copilot-service.js';
 
 async function bootstrap(): Promise<void> {
@@ -51,6 +52,7 @@ async function bootstrap(): Promise<void> {
   await app.register(sessionRoutes);
   await app.register(organizationRoutes);
   await app.register(knowledgeBaseRoutes);
+  await app.register(aiProviderRoutes);
 
   // --- Start copilot periodic sweep ---
   // This ensures sessions with pending segments get processed even if the

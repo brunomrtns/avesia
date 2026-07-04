@@ -80,7 +80,7 @@ export function TranscriptPanel({
   isDiarizing,
 }: TranscriptPanelProps) {
   return (
-    <div className="flex flex-1 flex-col overflow-hidden rounded-lg border border-border bg-surface shadow-sm min-w-0">
+    <div className="flex h-full flex-1 flex-col overflow-hidden rounded-lg border border-border bg-surface shadow-sm min-w-0">
       {/* Header */}
       <div className="flex items-center justify-between border-b border-border bg-surface-elevated/50 px-5 py-3.5">
         <div className="flex items-center gap-2">

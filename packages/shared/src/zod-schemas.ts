@@ -5,7 +5,9 @@ import { PASSWORD_RULES, PHONE_REGEX } from './constants.js';
 const emailSchema = z.string().email();
 const passwordSchema = z.string().min(PASSWORD_RULES.MIN_LENGTH).max(PASSWORD_RULES.MAX_LENGTH);
 const phoneSchema = z.string().regex(PHONE_REGEX);
-const isoDateSchema = z.string().datetime();
+const isoDateSchema = z.string().datetime().or(
+  z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'Invalid date format').transform((d) => `${d}T00:00:00.000Z`),
+);
 const idSchema = z.string().min(1);
 
 export const registerSchema = z.object({

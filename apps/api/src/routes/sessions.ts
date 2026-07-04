@@ -2,13 +2,14 @@ import type { FastifyPluginAsync, FastifyRequest } from 'fastify';
 
 import { NotFoundError, AuthError, generateId } from '@avesia/shared';
 import { createSessionSchema, updateSessionSchema, sessionListQuerySchema } from '@avesia/shared';
-import { AvesiaAICore, loadProviderConfigFromEnv } from '@avesia/ai-providers';
+import { AvesiaAICore } from '@avesia/ai-providers';
 import { AvesiaAICoreFacade, DIARIZATION_PROMPT } from '@avesia/ai-core';
 
 import { requireAuth } from '../plugins/auth.js';
 import { requireTenant, requirePermission } from '../plugins/tenant.js';
 import { writeAuditLog } from '../utils/audit-log.js';
 import { notifySegmentCreated, processManually, getSettings, updateSettings } from '../services/session-copilot-service.js';
+import { loadProviderConfigForOrg } from '../lib/org-ai-config.js';
 
 const sessionRoutes: FastifyPluginAsync = async (app): Promise<void> => {
   // All routes require auth + tenant
@@ -278,7 +279,7 @@ Exemplo de formato:
 [{"speaker": "PATIENT", "text": "Sim, tenho me sentido muito ansioso ultimamente."}]`;
 
     // Use the AI facade (provider-agnostic).
-    const providerConfig = loadProviderConfigFromEnv();
+    const providerConfig = await loadProviderConfigForOrg(app.prisma, request.organizationId);
     const providerCore = new AvesiaAICore(providerConfig);
     const aiCore = new AvesiaAICoreFacade(providerCore, {
       embedProviderConfig: providerConfig,
@@ -481,7 +482,7 @@ Exemplo de formato:
     }));
 
     // Use the AI facade (provider-agnostic, centralized config).
-    const providerConfig = loadProviderConfigFromEnv();
+    const providerConfig = await loadProviderConfigForOrg(app.prisma, request.organizationId);
     const providerCore = new AvesiaAICore(providerConfig);
     const aiCore = new AvesiaAICoreFacade(providerCore, {
       embedProviderConfig: providerConfig,

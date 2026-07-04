@@ -7,6 +7,8 @@ Starts the Celery worker and health check server.
 import signal
 import sys
 
+from sqlalchemy import text
+
 from src.config import get_settings
 from src.database import get_engine
 from src.logger import setup_logging, get_logger
@@ -23,7 +25,7 @@ def main():
     try:
         engine = get_engine()
         with engine.connect() as conn:
-            conn.execute("SELECT 1")
+            conn.execute(text("SELECT 1"))
         log.info("database connected")
     except Exception as err:
         log.error("database connection failed", error=str(err))

@@ -8,7 +8,7 @@
 // ============================================================================
 
 import { useEffect, useRef } from 'react';
-import { buildApiUrl, getAccessToken } from './api-client.js';
+import { buildApiUrl, ensureFreshAccessToken } from './api-client.js';
 
 export interface KbProgressEvent {
   readonly documentId: string;
@@ -44,15 +44,17 @@ export function useKbProgress({ knowledgeBaseId, onEvent, enabled = true }: UseK
 
   useEffect(() => {
     if (!enabled || !knowledgeBaseId) return;
-    const token = getAccessToken();
-    if (!token) return;
 
+    let cancelled = false;
     let socket: WebSocket | null = null;
     let reconnectTimer: ReturnType<typeof setTimeout> | null = null;
     let closedByUs = false;
     let attempt = 0;
 
-    const connect = (): void => {
+    const connect = async (): Promise<void> => {
+      const token = await ensureFreshAccessToken();
+      if (cancelled || !token) return;
+
       socket = new WebSocket(buildWsUrl(knowledgeBaseId, token));
 
       socket.onopen = () => {
@@ -72,7 +74,7 @@ export function useKbProgress({ knowledgeBaseId, onEvent, enabled = true }: UseK
         if (closedByUs) return;
         attempt += 1;
         const delay = Math.min(1000 * 2 ** attempt, 15_000);
-        reconnectTimer = setTimeout(connect, delay);
+        reconnectTimer = setTimeout(() => void connect(), delay);
       };
 
       socket.onerror = () => {
@@ -80,9 +82,10 @@ export function useKbProgress({ knowledgeBaseId, onEvent, enabled = true }: UseK
       };
     };
 
-    connect();
+    void connect();
 
     return () => {
+      cancelled = true;
       closedByUs = true;
       if (reconnectTimer) clearTimeout(reconnectTimer);
       socket?.close();

@@ -5,6 +5,9 @@ import { defineConfig } from 'vite';
 
 export default defineConfig({
   plugins: [react()],
+  // In production, the SPA is served under /avesia/ prefix.
+  // In dev, Vite serves from root.
+  base: process.env.NODE_ENV === 'production' ? '/avesia/' : '/',
   resolve: {
     alias: {
       '@': path.resolve(import.meta.dirname, './src'),

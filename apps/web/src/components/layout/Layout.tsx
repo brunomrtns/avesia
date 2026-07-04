@@ -4,6 +4,7 @@ import {
   Calendar,
   ChevronLeft,
   Command as CommandIcon,
+  Cpu,
   LayoutDashboard,
   LogOut,
   Menu,
@@ -20,7 +21,7 @@ import {
   useState,
   type ReactNode,
 } from 'react';
-import { NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom';
+import { NavLink, Outlet, useLocation, useNavigate, useParams } from 'react-router-dom';
 
 import {
   CommandDialog,
@@ -38,6 +39,7 @@ import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/comp
 import { NeuralIndicator } from '@/components/ui/neural-indicator';
 import { AuthContext } from '@/lib/auth-context';
 import { useTheme } from '@/lib/theme-context';
+import { BrandLogo, BRAND } from '@/components/branding/BrandLogo';
 import { cn } from '@/lib/utils';
 
 interface NavItem {
@@ -47,59 +49,33 @@ interface NavItem {
   readonly shortcut?: string;
 }
 
+// Paths are relative to /:orgSlug/ — the Layout prepends the org slug.
 const NAV_ITEMS: readonly NavItem[] = [
-  { label: 'Dashboard', path: '/', icon: <LayoutDashboard className="h-[18px] w-[18px]" />, shortcut: 'G D' },
-  { label: 'Pacientes', path: '/patients', icon: <Users className="h-[18px] w-[18px]" />, shortcut: 'G P' },
-  { label: 'Sessões', path: '/sessions', icon: <Calendar className="h-[18px] w-[18px]" />, shortcut: 'G S' },
-  { label: 'Base de Conhecimento', path: '/knowledge-base', icon: <BookOpen className="h-[18px] w-[18px]" />, shortcut: 'G K' },
-  { label: 'Configurações', path: '/settings', icon: <Settings className="h-[18px] w-[18px]" />, shortcut: 'G C' },
+  { label: 'Dashboard', path: '', icon: <LayoutDashboard className="h-[18px] w-[18px]" />, shortcut: 'G D' },
+  { label: 'Pacientes', path: 'patients', icon: <Users className="h-[18px] w-[18px]" />, shortcut: 'G P' },
+  { label: 'Sessões', path: 'sessions', icon: <Calendar className="h-[18px] w-[18px]" />, shortcut: 'G S' },
+  { label: 'Base de Conhecimento', path: 'knowledge-base', icon: <BookOpen className="h-[18px] w-[18px]" />, shortcut: 'G K' },
+  { label: 'Provedores de IA', path: 'ai-providers', icon: <Cpu className="h-[18px] w-[18px]" />, shortcut: 'G A' },
+  { label: 'Configurações', path: 'settings', icon: <Settings className="h-[18px] w-[18px]" />, shortcut: 'G C' },
 ];
 
 const PAGE_TITLES: Record<string, string> = {
-  '/': 'Dashboard',
-  '/patients': 'Pacientes',
-  '/sessions': 'Sessões',
-  '/knowledge-base': 'Base de Conhecimento',
-  '/settings': 'Configurações',
+  '': 'Dashboard',
+  patients: 'Pacientes',
+  sessions: 'Sessões',
+  'knowledge-base': 'Base de Conhecimento',
+  'ai-providers': 'Provedores de IA',
+  settings: 'Configurações',
 };
 
-// ── Avesia Logo Mark ───────────────────────────────────────────────────────
-// Custom SVG logo: a neural node with connections — not a generic brain icon.
-// Represents the Knowledge Graph + AI intelligence layer.
-function AvesiaLogo({ collapsed }: { collapsed: boolean }): React.JSX.Element {
-  return (
-    <div className="flex items-center gap-3">
-      <div className="relative flex h-9 w-9 shrink-0 items-center justify-center">
-        <svg viewBox="0 0 36 36" className="h-9 w-9">
-          {/* Neural connections — faint lines */}
-          <line x1="18" y1="8" x2="10" y2="22" stroke="hsl(var(--primary) / 0.3)" strokeWidth="1" />
-          <line x1="18" y1="8" x2="26" y2="22" stroke="hsl(var(--primary) / 0.3)" strokeWidth="1" />
-          <line x1="10" y1="22" x2="26" y2="22" stroke="hsl(var(--primary) / 0.2)" strokeWidth="1" />
-          {/* Nodes */}
-          <circle cx="18" cy="8" r="3" fill="hsl(var(--primary))" />
-          <circle cx="10" cy="22" r="2.5" fill="hsl(var(--primary) / 0.7)" />
-          <circle cx="26" cy="22" r="2.5" fill="hsl(var(--primary) / 0.7)" />
-          {/* Glow on central node */}
-          <circle cx="18" cy="8" r="5" fill="hsl(var(--primary) / 0.15)">
-            <animate attributeName="r" values="4;6;4" dur="3s" repeatCount="indefinite" />
-            <animate attributeName="opacity" values="0.15;0.05;0.15" dur="3s" repeatCount="indefinite" />
-          </circle>
-        </svg>
-      </div>
-      {!collapsed && (
-        <div className="flex-1 overflow-hidden">
-          <h1 className="text-base font-bold tracking-tight text-foreground">Avesia</h1>
-          <p className="text-[10px] font-medium uppercase tracking-wider text-primary/60">Clinical Intelligence</p>
-        </div>
-      )}
-    </div>
-  );
-}
+// ── Avesia Logo is now centralized in @/components/branding/BrandLogo ──────
+// Change brand name, tagline, or icon there and it reflects everywhere.
 
 export function Layout(): ReactNode {
   const auth = useContext(AuthContext);
   const location = useLocation();
   const navigate = useNavigate();
+  const { orgSlug } = useParams<{ orgSlug: string }>();
   const { theme, toggleTheme } = useTheme();
 
   const [sidebarOpen, setSidebarOpen] = useState(false);
@@ -108,7 +84,20 @@ export function Layout(): ReactNode {
 
   if (!auth) throw new Error('Layout must be used within AuthProvider');
 
-  const pageTitle = PAGE_TITLES[location.pathname] ?? 'Avesia';
+  // Build full path for a nav item: /:orgSlug/:path
+  const buildPath = (path: string): string => `/${orgSlug}${path ? `/${path}` : ''}`;
+
+  // Derive page title from the path after the org slug
+  const pathAfterSlug = location.pathname.replace(`/${orgSlug}`, '').replace(/^\//, '');
+  const pageTitle = PAGE_TITLES[pathAfterSlug] ?? BRAND.name;
+
+  // Filter nav items by role — AI Providers only for OWNER/ADMIN
+  const visibleNavItems = NAV_ITEMS.filter((item) => {
+    if (item.path === 'ai-providers') {
+      return auth.user?.role === 'OWNER' || auth.user?.role === 'ADMIN';
+    }
+    return true;
+  });
 
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
@@ -123,11 +112,11 @@ export function Layout(): ReactNode {
 
   const handleNavigate = useCallback(
     (path: string) => {
-      navigate(path);
+      navigate(buildPath(path));
       setCommandOpen(false);
       setSidebarOpen(false);
     },
-    [navigate],
+    [navigate, orgSlug],
   );
 
   return (
@@ -159,7 +148,7 @@ export function Layout(): ReactNode {
         >
           {/* Logo */}
           <div className="flex h-16 items-center border-b border-sidebar-border px-4">
-            <AvesiaLogo collapsed={collapsed} />
+            <BrandLogo variant={collapsed ? 'icon' : 'full'} size="md" />
             <button
               className="ml-auto rounded-md p-1.5 text-foreground-muted transition-colors hover:bg-surface-elevated lg:hidden"
               onClick={() => setSidebarOpen(false)}
@@ -171,12 +160,12 @@ export function Layout(): ReactNode {
 
           {/* Navigation */}
           <nav className="flex-1 space-y-0.5 px-2 py-4">
-            {NAV_ITEMS.map((item) => (
+            {visibleNavItems.map((item) => (
               <Tooltip key={item.path}>
                 <TooltipTrigger asChild>
                   <NavLink
-                    to={item.path}
-                    end={item.path === '/'}
+                    to={buildPath(item.path)}
+                    end={item.path === ''}
                     onClick={() => setSidebarOpen(false)}
                     className={({ isActive }) =>
                       cn(
@@ -190,15 +179,9 @@ export function Layout(): ReactNode {
                   >
                     {({ isActive }) => (
                       <>
-                        {/* Active indicator — neural line on left */}
+                        {/* Active indicator — vertical bar on left, vertically centered */}
                         {isActive && (
-                          <motion.div
-                            layoutId="nav-active-indicator"
-                            className="absolute left-0 top-1/2 h-5 w-0.5 -translate-y-1/2 rounded-full bg-primary"
-                            initial={{ opacity: 0, scaleY: 0 }}
-                            animate={{ opacity: 1, scaleY: 1 }}
-                            transition={{ duration: 0.2 }}
-                          />
+                          <div className="absolute left-0 top-2 bottom-2 w-[3px] rounded-full bg-primary" />
                         )}
                         <span className={cn('transition-transform duration-200', !isActive && 'group-hover:scale-110')}>
                           {item.icon}
@@ -265,7 +248,7 @@ export function Layout(): ReactNode {
               )}
               {!collapsed && (
                 <button
-                  onClick={auth.logout}
+                  onClick={() => { auth.logout(); navigate('/'); }}
                   className="rounded-md p-1.5 text-foreground-muted transition-colors hover:bg-destructive/10 hover:text-destructive"
                   aria-label="Sair"
                   title="Sair"
@@ -359,7 +342,7 @@ export function Layout(): ReactNode {
           <CommandList>
             <CommandEmpty>Nenhum resultado encontrado.</CommandEmpty>
             <CommandGroup heading="Navegação">
-              {NAV_ITEMS.map((item) => (
+              {visibleNavItems.map((item) => (
                 <CommandItem
                   key={item.path}
                   onSelect={() => handleNavigate(item.path)}
@@ -375,7 +358,7 @@ export function Layout(): ReactNode {
                 {theme === 'dark' ? <Sun className="h-4 w-4" /> : <Moon className="h-4 w-4" />}
                 <span>{theme === 'dark' ? 'Tema claro' : 'Tema escuro'}</span>
               </CommandItem>
-              <CommandItem onSelect={() => { auth.logout(); setCommandOpen(false); }}>
+              <CommandItem onSelect={() => { auth.logout(); navigate('/'); setCommandOpen(false); }}>
                 <LogOut className="h-4 w-4" />
                 <span>Sair</span>
               </CommandItem>

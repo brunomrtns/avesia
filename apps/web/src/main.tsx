@@ -8,15 +8,19 @@ import { AuthProvider } from '@/lib/auth-context';
 import { queryClient } from '@/lib/query-client';
 import { ThemeProvider } from '@/lib/theme-context';
 import { ErrorBoundary } from '@/components/ui/error-boundary';
+import { BRAND } from '@/components/branding/BrandLogo';
 import App from '@/App';
 import '@/index.css';
+
+// Sync document title with brand config
+document.title = `${BRAND.name} — ${BRAND.tagline}`;
 
 createRoot(document.getElementById('root')!).render(
   <StrictMode>
     <ErrorBoundary>
       <ThemeProvider>
         <QueryClientProvider client={queryClient}>
-          <BrowserRouter>
+          <BrowserRouter basename={import.meta.env.BASE_URL}>
             <AuthProvider>
               <App />
               <Toaster

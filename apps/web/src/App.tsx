@@ -5,6 +5,7 @@ import { Loader2 } from 'lucide-react';
 import { Layout } from '@/components/layout/Layout';
 import { ProtectedRoute } from '@/components/layout/ProtectedRoute';
 import { LoginPage } from '@/pages/LoginPage';
+import { LandingPage } from '@/pages/LandingPage';
 
 // Route-level code splitting
 const DashboardPage = lazy(() =>
@@ -25,6 +26,9 @@ const KnowledgeBasePage = lazy(() =>
 const SettingsPage = lazy(() =>
   import('@/pages/SettingsPage').then((m) => ({ default: m.SettingsPage })),
 );
+const AIProvidersPage = lazy(() =>
+  import('@/pages/AIProvidersPage').then((m) => ({ default: m.AIProvidersPage })),
+);
 
 function PageLoader() {
   return (
@@ -37,8 +41,12 @@ function PageLoader() {
 export default function App(): React.ReactNode {
   return (
     <Routes>
+      {/* Public routes */}
+      <Route path="/" element={<LandingPage />} />
       <Route path="/login" element={<LoginPage />} />
-      <Route element={<ProtectedRoute />}>
+
+      {/* Protected routes — scoped by org slug */}
+      <Route path=":orgSlug" element={<ProtectedRoute />}>
         <Route element={<Layout />}>
           <Route
             index
@@ -85,6 +93,14 @@ export default function App(): React.ReactNode {
             element={
               <Suspense fallback={<PageLoader />}>
                 <SettingsPage />
+              </Suspense>
+            }
+          />
+          <Route
+            path="ai-providers"
+            element={
+              <Suspense fallback={<PageLoader />}>
+                <AIProvidersPage />
               </Suspense>
             }
           />

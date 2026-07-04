@@ -43,6 +43,23 @@ export function RecordingControls({
         </motion.div>
       )}
 
+      {sessionStatus === 'IN_PROGRESS' && !isRecording && (
+        <motion.div
+          initial={{ opacity: 0, scale: 0.95 }}
+          animate={{ opacity: 1, scale: 1 }}
+          transition={{ duration: 0.2 }}
+        >
+          <Button
+            onClick={onStart}
+            variant="gradient"
+            className="h-10 gap-2 px-5 shadow-glow"
+          >
+            <Play className="h-4 w-4" />
+            Continuar Atendimento
+          </Button>
+        </motion.div>
+      )}
+
       {isRecording && (
         <>
           <SpeakerToggle />
