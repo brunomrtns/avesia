@@ -3,7 +3,14 @@ import type { FastifyPluginAsync, FastifyRequest } from 'fastify';
 import { NotFoundError, AuthError, generateId } from '@avesia/shared';
 import { createSessionSchema, updateSessionSchema, sessionListQuerySchema } from '@avesia/shared';
 import { AvesiaAICore } from '@avesia/ai-providers';
-import { AvesiaAICoreFacade, DIARIZATION_PROMPT } from '@avesia/ai-core';
+import {
+  AvesiaAICoreFacade,
+  DIARIZATION_PROMPT,
+  SOAP_NOTE_PROMPT,
+  SESSION_SUMMARY_PROMPT,
+  CLINICAL_ANALYSIS_PROMPT,
+  SESSION_BRIEFING_PROMPT,
+} from '@avesia/ai-core';
 
 import { requireAuth } from '../plugins/auth.js';
 import { requireTenant, requirePermission } from '../plugins/tenant.js';
@@ -459,6 +466,394 @@ Exemplo de formato:
       durationMs: a.durationMs,
       createdAt: a.createdAt,
     }));
+  });
+
+  // ── POST /sessions/:id/briefing ──────────────────────────────────────
+  // Pre-session briefing: summarizes previous sessions + patient history.
+  app.post('/sessions/:id/briefing', async (request: FastifyRequest, _reply) => {
+    const { id } = request.params as { id: string };
+
+    const session = await app.prisma.clinicalSession.findFirst({
+      where: { id, organizationId: request.organizationId },
+      include: {
+        patient: { select: { id: true, fullName: true, notes: true, tags: true } },
+      },
+    });
+
+    if (!session) {
+      throw new NotFoundError('Sessão não encontrada');
+    }
+
+    // Fetch previous completed sessions for this patient (most recent 5).
+    const previousSessions = await app.prisma.clinicalSession.findMany({
+      where: {
+        patientId: session.patientId,
+        organizationId: request.organizationId,
+        status: 'COMPLETED',
+        id: { not: id },
+      },
+      orderBy: { scheduledAt: 'desc' },
+      take: 5,
+      select: {
+        id: true,
+        scheduledAt: true,
+        type: true,
+        summary: true,
+      },
+    });
+
+    // Fetch latest clinical notes for this patient (most recent 3).
+    const previousNotes = await app.prisma.clinicalNote.findMany({
+      where: {
+        patientId: session.patientId,
+        organizationId: request.organizationId,
+      },
+      orderBy: { createdAt: 'desc' },
+      take: 3,
+      select: {
+        content: true,
+        createdAt: true,
+      },
+    });
+
+    if (previousSessions.length === 0 && previousNotes.length === 0) {
+      return {
+        content: '*Sem histórico anterior para este paciente. Esta é a primeira sessão registrada.*',
+        generatedAt: new Date().toISOString(),
+        hasHistory: false,
+      };
+    }
+
+    // Build context for the LLM.
+    const context = {
+      patient: {
+        name: session.patient.fullName,
+        tags: session.patient.tags,
+        notes: session.patient.notes,
+      },
+      upcomingSession: {
+        type: session.type,
+        scheduledAt: session.scheduledAt,
+        location: session.location,
+      },
+      previousSessions: previousSessions.map((s) => ({
+        date: s.scheduledAt,
+        type: s.type,
+        summary: s.summary,
+      })),
+      previousNotes: previousNotes.map((n) => ({
+        date: n.createdAt,
+        content: n.content,
+      })),
+    };
+
+    const providerConfig = await loadProviderConfigForOrg(app.prisma, request.organizationId);
+    const providerCore = new AvesiaAICore(providerConfig);
+    const aiCore = new AvesiaAICoreFacade(providerCore, {
+      embedProviderConfig: providerConfig,
+    });
+
+    const result = await aiCore.chat(
+      [
+        { role: 'system', content: SESSION_BRIEFING_PROMPT },
+        { role: 'user', content: JSON.stringify(context, null, 2) },
+      ],
+      { capability: 'complex', temperature: 0.3 },
+    );
+
+    // Persist as AIAnalysis for audit/retrieval.
+    await app.prisma.aIAnalysis.create({
+      data: {
+        id: generateId(),
+        organizationId: request.organizationId,
+        sessionId: id,
+        type: 'BRIEFING',
+        provider: result.provider,
+        model: result.model,
+        input: context as any,
+        output: { content: result.content } as any,
+        tokensUsed: { total: result.tokensUsed } as any,
+        status: 'COMPLETED',
+        durationMs: result.latencyMs ?? null,
+      },
+    });
+
+    await writeAuditLog(app.prisma, {
+      organizationId: request.organizationId,
+      userId: request.userId,
+      action: 'SESSION_BRIEFING_GENERATED',
+      resource: 'clinical_session',
+      resourceId: id,
+      metadata: { tokensUsed: result.tokensUsed },
+      ipAddress: request.ip,
+      userAgent: request.headers['user-agent'] ?? '',
+    });
+
+    return {
+      content: result.content,
+      generatedAt: new Date().toISOString(),
+      hasHistory: true,
+      tokensUsed: result.tokensUsed,
+    };
+  });
+
+  // ── POST /sessions/:id/soap ──────────────────────────────────────────
+  // Auto-generate a SOAP clinical note from the session transcript.
+  app.post('/sessions/:id/soap', async (request: FastifyRequest, reply) => {
+    const { id } = request.params as { id: string };
+
+    const session = await app.prisma.clinicalSession.findFirst({
+      where: { id, organizationId: request.organizationId },
+      include: {
+        patient: { select: { id: true, fullName: true } },
+        transcripts: {
+          include: {
+            segments: { orderBy: { sequence: 'asc' } },
+          },
+          orderBy: { createdAt: 'desc' },
+          take: 1,
+        },
+      },
+    });
+
+    if (!session) {
+      throw new NotFoundError('Sessão não encontrada');
+    }
+
+    const transcript = session.transcripts[0];
+    if (!transcript || transcript.segments.length === 0) {
+      return reply.code(400).send({
+        error: 'NO_TRANSCRIPT',
+        message: 'Não há transcrição disponível para gerar a nota SOAP.',
+      });
+    }
+
+    const transcriptText = transcript.segments
+      .map((s: any) => `[${s.speaker}]: ${s.text}`)
+      .join('\n');
+
+    const providerConfig = await loadProviderConfigForOrg(app.prisma, request.organizationId);
+    const providerCore = new AvesiaAICore(providerConfig);
+    const aiCore = new AvesiaAICoreFacade(providerCore, {
+      embedProviderConfig: providerConfig,
+    });
+
+    const result = await aiCore.chat(
+      [
+        { role: 'system', content: SOAP_NOTE_PROMPT },
+        {
+          role: 'user',
+          content: `Paciente: ${session.patient.fullName}\nTipo de sessão: ${session.type}\n\nTranscrição:\n${transcriptText}`,
+        },
+      ],
+      { capability: 'complex', temperature: 0.2 },
+    );
+
+    // Parse the JSON SOAP note from the LLM response.
+    let soapContent: Record<string, unknown>;
+    try {
+      const cleanContent = result.content.replace(/```json/g, '').replace(/```/g, '').trim();
+      soapContent = JSON.parse(cleanContent);
+    } catch {
+      // If parsing fails, store the raw content as subjective.
+      soapContent = {
+        subjective: result.content,
+        objective: '',
+        assessment: '',
+        plan: '',
+        observations: 'Erro ao parsear resposta do LLM — conteúdo bruto armazenado em subjective.',
+        tasks: [],
+      };
+    }
+
+    // Create a new ClinicalNote (DRAFT) — professional can review and finalize.
+    const note = await app.prisma.clinicalNote.create({
+      data: {
+        id: generateId(),
+        organizationId: request.organizationId,
+        sessionId: id,
+        patientId: session.patientId,
+        authorId: request.userId,
+        version: 1,
+        content: soapContent as any,
+        status: 'DRAFT',
+      },
+    });
+
+    // Persist the AI analysis record for audit.
+    await app.prisma.aIAnalysis.create({
+      data: {
+        id: generateId(),
+        organizationId: request.organizationId,
+        sessionId: id,
+        transcriptId: transcript.id,
+        type: 'SOAP_NOTE',
+        provider: result.provider,
+        model: result.model,
+        input: { transcriptLength: transcript.segments.length } as any,
+        output: { noteId: note.id, content: soapContent } as any,
+        tokensUsed: { total: result.tokensUsed } as any,
+        status: 'COMPLETED',
+        durationMs: result.latencyMs ?? null,
+      },
+    });
+
+    await writeAuditLog(app.prisma, {
+      organizationId: request.organizationId,
+      userId: request.userId,
+      action: 'SOAP_NOTE_GENERATED',
+      resource: 'clinical_session',
+      resourceId: id,
+      metadata: { noteId: note.id, tokensUsed: result.tokensUsed },
+      ipAddress: request.ip,
+      userAgent: request.headers['user-agent'] ?? '',
+    });
+
+    return {
+      noteId: note.id,
+      content: soapContent,
+      status: 'DRAFT',
+      tokensUsed: result.tokensUsed,
+      generatedAt: new Date().toISOString(),
+    };
+  });
+
+  // ── POST /sessions/:id/analyze ───────────────────────────────────────
+  // Post-session analysis: summary + clinical analysis (mood, risk, patterns).
+  app.post('/sessions/:id/analyze', async (request: FastifyRequest, reply) => {
+    const { id } = request.params as { id: string };
+
+    const session = await app.prisma.clinicalSession.findFirst({
+      where: { id, organizationId: request.organizationId },
+      include: {
+        patient: { select: { id: true, fullName: true } },
+        transcripts: {
+          include: {
+            segments: { orderBy: { sequence: 'asc' } },
+          },
+          orderBy: { createdAt: 'desc' },
+          take: 1,
+        },
+      },
+    });
+
+    if (!session) {
+      throw new NotFoundError('Sessão não encontrada');
+    }
+
+    const transcript = session.transcripts[0];
+    if (!transcript || transcript.segments.length === 0) {
+      return reply.code(400).send({
+        error: 'NO_TRANSCRIPT',
+        message: 'Não há transcrição disponível para análise pós-sessão.',
+      });
+    }
+
+    const transcriptText = transcript.segments
+      .map((s: any) => `[${s.speaker}]: ${s.text}`)
+      .join('\n');
+
+    const providerConfig = await loadProviderConfigForOrg(app.prisma, request.organizationId);
+    const providerCore = new AvesiaAICore(providerConfig);
+    const aiCore = new AvesiaAICoreFacade(providerCore, {
+      embedProviderConfig: providerConfig,
+    });
+
+    // Run summary and clinical analysis in parallel.
+    const [summaryResult, analysisResult] = await Promise.all([
+      aiCore.chat(
+        [
+          { role: 'system', content: SESSION_SUMMARY_PROMPT },
+          {
+            role: 'user',
+            content: `Paciente: ${session.patient.fullName}\nTipo de sessão: ${session.type}\n\nTranscrição:\n${transcriptText}`,
+          },
+        ],
+        { capability: 'complex', temperature: 0.3 },
+      ),
+      aiCore.chat(
+        [
+          { role: 'system', content: CLINICAL_ANALYSIS_PROMPT },
+          {
+            role: 'user',
+            content: `Paciente: ${session.patient.fullName}\nTipo de sessão: ${session.type}\n\nTranscrição:\n${transcriptText}`,
+          },
+        ],
+        { capability: 'complex', temperature: 0.3 },
+      ),
+    ]);
+
+    // Update session summary.
+    await app.prisma.clinicalSession.update({
+      where: { id },
+      data: { summary: summaryResult.content },
+    });
+
+    // Persist both AIAnalysis records.
+    const [summaryAnalysis, clinicalAnalysis] = await Promise.all([
+      app.prisma.aIAnalysis.create({
+        data: {
+          id: generateId(),
+          organizationId: request.organizationId,
+          sessionId: id,
+          transcriptId: transcript.id,
+          type: 'SUMMARY',
+          provider: summaryResult.provider,
+          model: summaryResult.model,
+          input: { transcriptLength: transcript.segments.length } as any,
+          output: { content: summaryResult.content } as any,
+          tokensUsed: { total: summaryResult.tokensUsed } as any,
+          status: 'COMPLETED',
+          durationMs: summaryResult.latencyMs ?? null,
+        },
+      }),
+      app.prisma.aIAnalysis.create({
+        data: {
+          id: generateId(),
+          organizationId: request.organizationId,
+          sessionId: id,
+          transcriptId: transcript.id,
+          type: 'INSIGHTS',
+          provider: analysisResult.provider,
+          model: analysisResult.model,
+          input: { transcriptLength: transcript.segments.length } as any,
+          output: { content: analysisResult.content } as any,
+          tokensUsed: { total: analysisResult.tokensUsed } as any,
+          status: 'COMPLETED',
+          durationMs: analysisResult.latencyMs ?? null,
+        },
+      }),
+    ]);
+
+    await writeAuditLog(app.prisma, {
+      organizationId: request.organizationId,
+      userId: request.userId,
+      action: 'POST_SESSION_ANALYSIS_GENERATED',
+      resource: 'clinical_session',
+      resourceId: id,
+      metadata: {
+        summaryAnalysisId: summaryAnalysis.id,
+        clinicalAnalysisId: clinicalAnalysis.id,
+        totalTokensUsed: {
+          summary: summaryResult.tokensUsed,
+          analysis: analysisResult.tokensUsed,
+        },
+      },
+      ipAddress: request.ip,
+      userAgent: request.headers['user-agent'] ?? '',
+    });
+
+    return {
+      summary: summaryResult.content,
+      analysis: analysisResult.content,
+      summaryAnalysisId: summaryAnalysis.id,
+      clinicalAnalysisId: clinicalAnalysis.id,
+      tokensUsed: {
+        summary: summaryResult.tokensUsed,
+        analysis: analysisResult.tokensUsed,
+      },
+      generatedAt: new Date().toISOString(),
+    };
   });
 
   // ── POST /sessions/:id/diarize ────────────────────────────────────────

@@ -100,6 +100,95 @@ export type CopilotEvent = CopilotAssistanceEvent | CopilotStatusEvent | Copilot
   data: CopilotSettings;
 };
 
+// ── Briefing / SOAP / Post-session analysis types ──────────────────────────
+
+export interface BriefingResponse {
+  content: string;
+  generatedAt: string;
+  hasHistory: boolean;
+  tokensUsed?: number;
+}
+
+export interface SOAPContent {
+  subjective: string;
+  objective: string;
+  assessment: string;
+  plan: string;
+  observations: string;
+  tasks: string[];
+}
+
+export interface SOAPNoteResponse {
+  noteId: string;
+  content: SOAPContent;
+  status: 'DRAFT';
+  tokensUsed?: number;
+  generatedAt: string;
+}
+
+export interface PostSessionAnalysisResponse {
+  summary: string;
+  analysis: string;
+  summaryAnalysisId: string;
+  clinicalAnalysisId: string;
+  tokensUsed: {
+    summary: number;
+    analysis: number;
+  };
+  generatedAt: string;
+}
+
+// ── Dashboard stats ─────────────────────────────────────────────────────────
+
+export interface DashboardStats {
+  patients: {
+    total: number;
+    active: number;
+    newThisMonth: number;
+  };
+  sessions: {
+    total: number;
+    completed: number;
+    scheduled: number;
+    inProgress: number;
+    today: number;
+    thisWeek: number;
+    thisMonth: number;
+  };
+  notes: {
+    total: number;
+    thisMonth: number;
+    finalized: number;
+  };
+  aiAnalyses: {
+    total: number;
+    soapNotesGenerated: number;
+    summariesGenerated: number;
+    briefingsGenerated: number;
+    copilotAnalysesTotal: number;
+    totalTokensUsed: number;
+  };
+  sessionsByType: Array<{ type: string; count: number }>;
+  trend: Array<{ date: string; count: number }>;
+  recentSessions: Array<{
+    id: string;
+    status: string;
+    type: string;
+    scheduledAt: string;
+    patientName: string;
+    professionalName: string;
+  }>;
+  recentAnalyses: Array<{
+    id: string;
+    type: string;
+    provider: string;
+    model: string;
+    status: string;
+    createdAt: string;
+    sessionId: string;
+  }>;
+}
+
 let accessToken: string | null = null;
 let refreshPromise: Promise<string | null> | null = null;
 
@@ -347,6 +436,15 @@ export const api = {
       request<CopilotSettings>(`/sessions/${id}/copilot/settings`, { method: 'PUT', body: data }),
     getCopilotAnalyses: (id: string): Promise<Record<string, unknown>[]> =>
       request<Record<string, unknown>[]>(`/sessions/${id}/copilot/analyses`),
+    // Briefing (pre-session)
+    generateBriefing: (id: string): Promise<BriefingResponse> =>
+      request<BriefingResponse>(`/sessions/${id}/briefing`, { method: 'POST' }),
+    // SOAP note (auto-generate from transcript)
+    generateSOAP: (id: string): Promise<SOAPNoteResponse> =>
+      request<SOAPNoteResponse>(`/sessions/${id}/soap`, { method: 'POST' }),
+    // Post-session analysis (summary + clinical analysis)
+    generateAnalysis: (id: string): Promise<PostSessionAnalysisResponse> =>
+      request<PostSessionAnalysisResponse>(`/sessions/${id}/analyze`, { method: 'POST' }),
   },
 
   organization: {
@@ -363,6 +461,10 @@ export const api = {
 
   health: {
     check: <T>(): Promise<T> => request<T>('/health/ai'),
+  },
+
+  stats: {
+    get: (): Promise<DashboardStats> => request<DashboardStats>('/stats'),
   },
 
   aiProviders: {

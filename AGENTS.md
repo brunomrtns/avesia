@@ -226,7 +226,17 @@ All clinical prompts are centralized in `@avesia/ai-core`:
 - `CLINICAL_ANALYSIS_PROMPT` — clinical analysis tasks (mood, risk, etc.)
 - `SOAP_NOTE_PROMPT` — SOAP note generation
 - `SESSION_SUMMARY_PROMPT` — session summarization
+- `SESSION_BRIEFING_PROMPT` — pre-session briefing (history + KB context)
 - `DIARIZATION_PROMPT` — speaker diarization correction
+
+### Session AI endpoints
+
+- `POST /sessions/:id/briefing` — pre-session briefing from patient history
+- `POST /sessions/:id/soap` — auto-generate SOAP clinical note (creates DRAFT ClinicalNote)
+- `POST /sessions/:id/analyze` — post-session analysis (summary + clinical analysis in parallel)
+- `POST /sessions/:id/insights` — real-time copilot insights (manual trigger)
+- `POST /sessions/:id/diarize` — speaker diarization correction
+- `GET /stats` — aggregated dashboard metrics (patients, sessions, notes, AI analyses, tokens)
 
 ### AI provider abstraction
 
@@ -264,6 +274,7 @@ import {
   CLINICAL_ANALYSIS_PROMPT,
   SOAP_NOTE_PROMPT,
   SESSION_SUMMARY_PROMPT,
+  SESSION_BRIEFING_PROMPT,
   DIARIZATION_PROMPT,
   // Adapters
   PrismaGraphRepository,

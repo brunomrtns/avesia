@@ -5,7 +5,9 @@ import {
   ArrowUpRight,
   Calendar,
   CalendarCheck,
+  ClipboardList,
   Plus,
+  Sparkles,
   Users,
 } from 'lucide-react';
 import { format } from 'date-fns';
@@ -14,6 +16,8 @@ import { Link, useParams } from 'react-router-dom';
 import {
   Area,
   AreaChart,
+  Bar,
+  BarChart,
   CartesianGrid,
   ResponsiveContainer,
   Tooltip as RechartsTooltip,
@@ -35,8 +39,8 @@ import {
 } from '@/components/ui/table';
 import { NeuralIndicator } from '@/components/ui/neural-indicator';
 import { api } from '@/lib/api-client';
+import type { DashboardStats } from '@/lib/api-client';
 import { cn } from '@/lib/utils';
-import type { ClinicalSession } from '@avesia/types';
 
 // ─── Stat Card — refined with neural identity ──────────────────────────────
 
@@ -45,8 +49,8 @@ interface StatCardProps {
   value: number;
   icon: React.ReactNode;
   accentClass: string;
-  loading?: boolean;
-  trend?: string;
+  loading?: boolean | undefined;
+  trend?: string | undefined;
   index: number;
 }
 
@@ -58,7 +62,6 @@ function StatCard({ title, value, icon, accentClass, loading, trend, index }: St
       transition={{ duration: 0.35, delay: index * 0.06, ease: [0.16, 1, 0.3, 1] }}
     >
       <Card className="group relative overflow-hidden transition-all duration-300 hover:border-border-hover hover:shadow-md">
-        {/* Subtle accent glow on hover */}
         <div className={cn(
           'absolute -right-12 -top-12 h-28 w-28 rounded-full opacity-0 blur-3xl transition-opacity duration-500 group-hover:opacity-20',
           accentClass,
@@ -107,22 +110,31 @@ const SESSION_STATUS: Record<string, { label: string; variant: 'success' | 'warn
   CANCELLED: { label: 'Cancelada', variant: 'destructive' },
 };
 
+const ANALYSIS_TYPE_LABELS: Record<string, string> = {
+  SUMMARY: 'Resumo',
+  INSIGHTS: 'Insights',
+  SOAP_NOTE: 'Nota SOAP',
+  BRIEFING: 'Briefing',
+  TOPICS: 'Tópicos',
+  KEYWORDS: 'Palavras-chave',
+  TREATMENT_PLAN: 'Plano de Tratamento',
+};
+
 // ─── AI Activity Card — the signature neural element ───────────────────────
 
-function AIActivityCard({ totalSessions, completedSessions, totalPatients }: {
-  totalSessions: number;
-  completedSessions: number;
-  totalPatients: number;
-}) {
+function AIActivityCard({ stats }: { stats: DashboardStats | undefined }) {
+  const totalSessions = stats?.sessions.total ?? 0;
+  const completedSessions = stats?.sessions.completed ?? 0;
+  const totalPatients = stats?.patients.active ?? 0;
   const completionRate = totalSessions > 0 ? Math.round((completedSessions / totalSessions) * 100) : 0;
+  const soapNotes = stats?.aiAnalyses.soapNotesGenerated ?? 0;
+  const totalTokens = stats?.aiAnalyses.totalTokensUsed ?? 0;
 
   return (
     <Card className="relative overflow-hidden border-primary/15 bg-gradient-glow">
-      {/* Neural mesh overlay — denser for AI areas */}
       <div className="absolute inset-0 mesh-bg-dense opacity-40" />
 
       <CardContent className="relative space-y-4 p-5">
-        {/* Header */}
         <div className="flex items-center gap-3">
           <NeuralIndicator state="active" size="md" />
           <div className="flex-1">
@@ -137,7 +149,6 @@ function AIActivityCard({ totalSessions, completedSessions, totalPatients }: {
 
         <div className="neural-divider" />
 
-        {/* Metrics */}
         <div className="space-y-3">
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-2">
@@ -147,7 +158,6 @@ function AIActivityCard({ totalSessions, completedSessions, totalPatients }: {
             <span className="font-mono text-sm font-semibold text-foreground tabular-nums">{completionRate}%</span>
           </div>
 
-          {/* Progress bar — neural styled */}
           <div className="relative h-1.5 overflow-hidden rounded-full bg-muted">
             <motion.div
               className="absolute inset-y-0 left-0 rounded-full bg-gradient-primary"
@@ -155,7 +165,6 @@ function AIActivityCard({ totalSessions, completedSessions, totalPatients }: {
               animate={{ width: `${completionRate}%` }}
               transition={{ duration: 0.8, delay: 0.3, ease: [0.16, 1, 0.3, 1] }}
             />
-            {/* Shimmer overlay */}
             <div className="absolute inset-0 shimmer opacity-30" />
           </div>
 
@@ -170,20 +179,29 @@ function AIActivityCard({ totalSessions, completedSessions, totalPatients }: {
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-2">
               <div className="h-1.5 w-1.5 rounded-full bg-success" />
-              <span className="text-xs text-foreground-secondary">Sessões processadas</span>
+              <span className="text-xs text-foreground-secondary">Notas SOAP geradas</span>
             </div>
-            <span className="font-mono text-sm font-semibold text-foreground tabular-nums">{completedSessions}</span>
+            <span className="font-mono text-sm font-semibold text-foreground tabular-nums">{soapNotes}</span>
+          </div>
+
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-2">
+              <div className="h-1.5 w-1.5 rounded-full bg-primary" />
+              <span className="text-xs text-foreground-secondary">Tokens utilizados</span>
+            </div>
+            <span className="font-mono text-sm font-semibold text-foreground tabular-nums">
+              {totalTokens >= 1000 ? `${(totalTokens / 1000).toFixed(1)}k` : totalTokens}
+            </span>
           </div>
         </div>
 
         <div className="neural-divider" />
 
-        {/* AI insight — clinical serif for trust */}
         <div className="space-y-1.5">
           <p className="text-[10px] font-medium uppercase tracking-wider text-primary/70">Insight da IA</p>
           <p className="font-clinical text-sm leading-relaxed text-foreground-secondary">
             {totalPatients === 0
-              ? 'Comece cadastrando seu primeiro paciente para ativar a análise preditiva.'
+              ? 'Comece cadastrando seu primeiro paciente para ativar a análise clínica.'
               : completionRate >= 70
                 ? 'Taxa de conclusão saudável. O padrão de atendimento está consistente.'
                 : completionRate > 0
@@ -201,42 +219,33 @@ function AIActivityCard({ totalSessions, completedSessions, totalPatients }: {
 export function DashboardPage(): React.ReactNode {
   const { orgSlug } = useParams<{ orgSlug: string }>();
 
-  const patientsQuery = useQuery({
-    queryKey: ['patients', 'stats'],
-    queryFn: () => api.patients.list({ pageSize: 1 }),
+  const statsQuery = useQuery({
+    queryKey: ['stats'],
+    queryFn: () => api.stats.get(),
+    refetchInterval: 60_000, // refresh every minute
   });
 
-  const sessionsQuery = useQuery({
-    queryKey: ['sessions', 'stats'],
-    queryFn: () => api.sessions.list({ pageSize: 5 }),
-  });
+  const stats = statsQuery.data;
+  const loading = statsQuery.isLoading;
 
-  const todayStr = new Date().toISOString().split('T')[0]!;
-  const todaySessionsQuery = useQuery({
-    queryKey: ['sessions', 'today'],
-    queryFn: () =>
-      api.sessions.list({
-        from: `${todayStr}T00:00:00.000Z` as never,
-        to: `${todayStr}T23:59:59.999Z` as never,
-        pageSize: 100,
-      }),
-  });
-
-  const totalPatients = patientsQuery.data?.total ?? 0;
-  const todaySessions = todaySessionsQuery.data?.total ?? 0;
-  const totalSessions = sessionsQuery.data?.total ?? 0;
-  const completedSessions =
-    sessionsQuery.data?.items?.filter((s) => s.status === 'COMPLETED').length ?? 0;
-  const recentSessions = sessionsQuery.data?.items ?? [];
-
-  const chartData = recentSessions.map((s) => ({
-    name: s.scheduledAt ? format(new Date(s.scheduledAt), 'dd/MM', { locale: ptBR }) : '—',
-    sessoes: 1,
+  // Trend chart data (last 30 days)
+  const trendData = (stats?.trend ?? []).map((d) => ({
+    name: format(new Date(d.date + 'T00:00:00'), 'dd/MM', { locale: ptBR }),
+    sessoes: d.count,
   }));
+
+  // Sessions by type chart data
+  const typeChartData = (stats?.sessionsByType ?? []).map((s) => ({
+    name: SESSION_TYPES[s.type]?.label ?? s.type,
+    total: s.count,
+  }));
+
+  const recentSessions = stats?.recentSessions ?? [];
+  const recentAnalyses = stats?.recentAnalyses ?? [];
 
   return (
     <div className="mx-auto max-w-7xl space-y-6">
-      {/* Page header — refined, confident */}
+      {/* Page header */}
       <motion.div
         initial={{ opacity: 0, y: 8 }}
         animate={{ opacity: 1, y: 0 }}
@@ -259,62 +268,79 @@ export function DashboardPage(): React.ReactNode {
         </Button>
       </motion.div>
 
-      {/* Stats grid — 4 cards, refined */}
-      <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+      {/* Stats grid — 6 cards with clinical metrics */}
+      <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6">
         <StatCard
           index={0}
           title="Pacientes"
-          value={totalPatients}
+          value={stats?.patients.total ?? 0}
           icon={<Users className="h-5 w-5 text-primary" />}
           accentClass="bg-primary/10"
-          loading={patientsQuery.isLoading}
+          loading={loading}
+          trend={stats && stats.patients.newThisMonth > 0 ? `+${stats.patients.newThisMonth} este mês` : undefined}
         />
         <StatCard
           index={1}
           title="Sessões Hoje"
-          value={todaySessions}
+          value={stats?.sessions.today ?? 0}
           icon={<Calendar className="h-5 w-5 text-accent" />}
           accentClass="bg-accent/10"
-          loading={todaySessionsQuery.isLoading}
+          loading={loading}
         />
         <StatCard
           index={2}
           title="Total Sessões"
-          value={totalSessions}
+          value={stats?.sessions.total ?? 0}
           icon={<Activity className="h-5 w-5 text-primary" />}
           accentClass="bg-primary/10"
-          loading={sessionsQuery.isLoading}
+          loading={loading}
         />
         <StatCard
           index={3}
           title="Realizadas"
-          value={completedSessions}
+          value={stats?.sessions.completed ?? 0}
           icon={<CalendarCheck className="h-5 w-5 text-success" />}
           accentClass="bg-success/10"
-          loading={sessionsQuery.isLoading}
+          loading={loading}
+        />
+        <StatCard
+          index={4}
+          title="Notas SOAP"
+          value={stats?.aiAnalyses.soapNotesGenerated ?? 0}
+          icon={<ClipboardList className="h-5 w-5 text-primary" />}
+          accentClass="bg-primary/10"
+          loading={loading}
+        />
+        <StatCard
+          index={5}
+          title="Análises IA"
+          value={stats?.aiAnalyses.total ?? 0}
+          icon={<Sparkles className="h-5 w-5 text-accent" />}
+          accentClass="bg-accent/10"
+          loading={loading}
         />
       </div>
 
-      {/* Main grid: chart + AI activity */}
+      {/* Main grid: trend chart + AI activity */}
       <div className="grid gap-3 lg:grid-cols-3">
-        {/* Sessions chart — refined */}
+        {/* Sessions trend chart (last 30 days) */}
         <Card className="lg:col-span-2">
           <CardContent className="p-5">
             <div className="mb-4 flex items-center justify-between">
               <div>
                 <h3 className="text-sm font-semibold tracking-tight text-foreground">Atividade de Sessões</h3>
-                <p className="text-xs text-foreground-muted">Distribuição das sessões recentes</p>
+                <p className="text-xs text-foreground-muted">Últimos 30 dias</p>
               </div>
               <div className="flex items-center gap-2">
                 <div className="h-1.5 w-1.5 rounded-full bg-primary animate-ai-pulse" />
                 <span className="text-[10px] font-medium uppercase tracking-wider text-foreground-muted">Tempo real</span>
               </div>
             </div>
-            {sessionsQuery.isLoading ? (
+            {loading ? (
               <Skeleton className="h-[220px] w-full rounded-md" />
-            ) : chartData.length > 0 ? (
+            ) : trendData.length > 0 ? (
               <ResponsiveContainer width="100%" height={220}>
-                <AreaChart data={chartData} margin={{ top: 10, right: 0, left: -20, bottom: 0 }}>
+                <AreaChart data={trendData} margin={{ top: 10, right: 0, left: -20, bottom: 0 }}>
                   <defs>
                     <linearGradient id="colorSessions" x1="0" y1="0" x2="0" y2="1">
                       <stop offset="5%" stopColor="hsl(var(--primary))" stopOpacity={0.25} />
@@ -371,14 +397,141 @@ export function DashboardPage(): React.ReactNode {
         </Card>
 
         {/* AI Activity — signature card */}
-        <AIActivityCard
-          totalSessions={totalSessions}
-          completedSessions={completedSessions}
-          totalPatients={totalPatients}
-        />
+        <AIActivityCard stats={stats} />
       </div>
 
-      {/* Recent sessions table — refined */}
+      {/* Secondary grid: sessions by type + recent AI analyses */}
+      <div className="grid gap-3 lg:grid-cols-3">
+        {/* Sessions by type — bar chart */}
+        <Card className="lg:col-span-1">
+          <CardContent className="p-5">
+            <div className="mb-4">
+              <h3 className="text-sm font-semibold tracking-tight text-foreground">Sessões por Tipo</h3>
+              <p className="text-xs text-foreground-muted">Distribuição total</p>
+            </div>
+            {loading ? (
+              <Skeleton className="h-[180px] w-full rounded-md" />
+            ) : typeChartData.length > 0 ? (
+              <ResponsiveContainer width="100%" height={180}>
+                <BarChart data={typeChartData} margin={{ top: 10, right: 0, left: -20, bottom: 0 }}>
+                  <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" vertical={false} />
+                  <XAxis
+                    dataKey="name"
+                    stroke="hsl(var(--foreground-muted))"
+                    fontSize={11}
+                    tickLine={false}
+                    axisLine={false}
+                  />
+                  <YAxis
+                    stroke="hsl(var(--foreground-muted))"
+                    fontSize={11}
+                    tickLine={false}
+                    axisLine={false}
+                    allowDecimals={false}
+                  />
+                  <RechartsTooltip
+                    contentStyle={{
+                      backgroundColor: 'hsl(var(--popover))',
+                      border: '1px solid hsl(var(--border))',
+                      borderRadius: 'var(--radius)',
+                      fontSize: '12px',
+                      color: 'hsl(var(--popover-foreground))',
+                      boxShadow: 'var(--shadow-md)',
+                    }}
+                  />
+                  <Bar
+                    dataKey="total"
+                    fill="hsl(var(--primary))"
+                    radius={[4, 4, 0, 0]}
+                  />
+                </BarChart>
+              </ResponsiveContainer>
+            ) : (
+              <div className="flex h-[180px] flex-col items-center justify-center gap-2 text-center">
+                <NeuralIndicator state="idle" size="md" />
+                <p className="text-xs text-foreground-muted">Sem dados</p>
+              </div>
+            )}
+          </CardContent>
+        </Card>
+
+        {/* Recent AI analyses */}
+        <Card className="lg:col-span-2">
+          <CardContent className="p-5">
+            <div className="mb-4 flex items-center justify-between">
+              <div>
+                <h3 className="text-sm font-semibold tracking-tight text-foreground">Análises IA Recentes</h3>
+                <p className="text-xs text-foreground-muted">Últimas análises geradas</p>
+              </div>
+              <Badge variant="outline" className="gap-1 text-[10px]">
+                <Sparkles className="h-3 w-3 text-primary" />
+                {stats?.aiAnalyses.total ?? 0} total
+              </Badge>
+            </div>
+            {loading ? (
+              <div className="space-y-2">
+                {Array.from({ length: 4 }).map((_, i) => (
+                  <Skeleton key={i} className="h-10 w-full rounded-md" />
+                ))}
+              </div>
+            ) : recentAnalyses.length === 0 ? (
+              <div className="flex flex-col items-center justify-center gap-3 py-8 text-center">
+                <div className="flex h-10 w-10 items-center justify-center rounded-full border border-border-subtle bg-surface-elevated">
+                  <Sparkles className="h-4 w-4 text-foreground-muted" />
+                </div>
+                <div>
+                  <p className="text-sm font-medium text-foreground-secondary">Nenhuma análise ainda</p>
+                  <p className="text-xs text-foreground-muted">Gere briefings, notas SOAP ou análises pós-sessão</p>
+                </div>
+              </div>
+            ) : (
+              <Table>
+                <TableHeader>
+                  <TableRow className="border-border-subtle hover:bg-transparent">
+                    <TableHead className="text-[11px] uppercase tracking-wider text-foreground-muted">Tipo</TableHead>
+                    <TableHead className="text-[11px] uppercase tracking-wider text-foreground-muted">Modelo</TableHead>
+                    <TableHead className="text-[11px] uppercase tracking-wider text-foreground-muted">Data</TableHead>
+                    <TableHead className="text-[11px] uppercase tracking-wider text-foreground-muted">Status</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {recentAnalyses.map((a, i) => (
+                    <motion.tr
+                      key={a.id}
+                      initial={{ opacity: 0 }}
+                      animate={{ opacity: 1 }}
+                      transition={{ duration: 0.2, delay: i * 0.05 }}
+                      className="group border-border-subtle transition-colors hover:bg-surface-elevated/40"
+                    >
+                      <TableCell className="py-2.5">
+                        <Badge variant="outline" className="text-[10px]">
+                          {ANALYSIS_TYPE_LABELS[a.type] ?? a.type}
+                        </Badge>
+                      </TableCell>
+                      <TableCell className="py-2.5 text-xs text-foreground-secondary font-mono">
+                        {a.model}
+                      </TableCell>
+                      <TableCell className="py-2.5 text-xs text-foreground-secondary font-mono">
+                        {format(new Date(a.createdAt), "dd/MM/yyyy 'às' HH:mm", { locale: ptBR })}
+                      </TableCell>
+                      <TableCell className="py-2.5">
+                        <Badge
+                          variant={a.status === 'COMPLETED' ? 'success' : a.status === 'FAILED' ? 'destructive' : 'warning'}
+                          className="text-[10px]"
+                        >
+                          {a.status === 'COMPLETED' ? 'Concluída' : a.status === 'FAILED' ? 'Falhou' : 'Pendente'}
+                        </Badge>
+                      </TableCell>
+                    </motion.tr>
+                  ))}
+                </TableBody>
+              </Table>
+            )}
+          </CardContent>
+        </Card>
+      </div>
+
+      {/* Recent sessions table */}
       <Card>
         <CardContent className="p-5">
           <div className="mb-4 flex items-center justify-between">
@@ -390,7 +543,7 @@ export function DashboardPage(): React.ReactNode {
               <Link to={`/${orgSlug}/sessions`}>Ver todas</Link>
             </Button>
           </div>
-          {sessionsQuery.isLoading ? (
+          {loading ? (
             <div className="space-y-2">
               {Array.from({ length: 4 }).map((_, i) => (
                 <Skeleton key={i} className="h-10 w-full rounded-md" />
@@ -418,28 +571,25 @@ export function DashboardPage(): React.ReactNode {
               </TableHeader>
               <TableBody>
                 {recentSessions.map((session, i) => {
-                  const s = session as ClinicalSession & { patient?: { fullName?: string } };
-                  const typeInfo = SESSION_TYPES[s.type] ?? { label: s.type, variant: 'outline' as const };
-                  const statusInfo = SESSION_STATUS[s.status] ?? { label: s.status, variant: 'outline' as const };
+                  const typeInfo = SESSION_TYPES[session.type] ?? { label: session.type, variant: 'outline' as const };
+                  const statusInfo = SESSION_STATUS[session.status] ?? { label: session.status, variant: 'outline' as const };
 
                   return (
                     <motion.tr
-                      key={s.id}
+                      key={session.id}
                       initial={{ opacity: 0 }}
                       animate={{ opacity: 1 }}
                       transition={{ duration: 0.2, delay: i * 0.05 }}
                       className="group border-border-subtle transition-colors hover:bg-surface-elevated/40"
                     >
                       <TableCell className="py-3 font-medium text-foreground">
-                        {s.patient?.fullName ?? '—'}
+                        {session.patientName}
                       </TableCell>
                       <TableCell className="py-3">
                         <Badge variant={typeInfo.variant} className="text-[10px]">{typeInfo.label}</Badge>
                       </TableCell>
                       <TableCell className="py-3 text-xs text-foreground-secondary font-mono">
-                        {s.scheduledAt
-                          ? format(new Date(s.scheduledAt), "dd MMM yyyy 'às' HH:mm", { locale: ptBR })
-                          : '—'}
+                        {format(new Date(session.scheduledAt), "dd MMM yyyy 'às' HH:mm", { locale: ptBR })}
                       </TableCell>
                       <TableCell className="py-3">
                         <Badge variant={statusInfo.variant} className="text-[10px]">{statusInfo.label}</Badge>

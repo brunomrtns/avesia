@@ -71,6 +71,7 @@ export {
   SOAP_NOTE_PROMPT,
   SESSION_SUMMARY_PROMPT,
   DIARIZATION_PROMPT,
+  SESSION_BRIEFING_PROMPT,
 } from './analysis/clinical-prompts.js';
 
 // ── Session copilot (real-time clinical assistant) ──────────────────────────

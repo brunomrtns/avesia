@@ -13,6 +13,7 @@ import {
   Loader2,
   ChevronLeft,
   ChevronRight,
+  Sparkles,
 } from 'lucide-react';
 
 import { api } from '@/lib/api-client';
@@ -44,6 +45,7 @@ import {
   TableRow,
 } from '@/components/ui/table';
 import { Textarea } from '@/components/ui/textarea';
+import { BriefingDialog } from '@/components/session-room/BriefingDialog';
 import { cn } from '@/lib/utils';
 
 const sessionFormSchema = z.object({
@@ -92,6 +94,7 @@ export function SessionsPage(): React.ReactNode {
   const [fromDate, setFromDate] = useState('');
   const [toDate, setToDate] = useState('');
   const [dialogOpen, setDialogOpen] = useState(false);
+  const [briefingSession, setBriefingSession] = useState<{ id: string; patientName: string } | null>(null);
 
   const pageSize = 20;
 
@@ -277,11 +280,29 @@ export function SessionsPage(): React.ReactNode {
                       </Badge>
                     </TableCell>
                     <TableCell className="whitespace-nowrap text-right">
-                      <Link to={`/${orgSlug}/sessions/${s.id}`}>
-                        <Button variant="outline" size="sm" className="h-8">
-                          {s.status === 'SCHEDULED' || s.status === 'IN_PROGRESS' ? 'Atender' : 'Ver Detalhes'}
-                        </Button>
-                      </Link>
+                      <div className="flex items-center justify-end gap-2">
+                        {s.status === 'SCHEDULED' && (
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            className="h-8 text-primary hover:text-primary"
+                            onClick={() =>
+                              setBriefingSession({
+                                id: s.id as string,
+                                patientName: (patient?.fullName as string) ?? 'Paciente',
+                              })
+                            }
+                          >
+                            <Sparkles className="h-3.5 w-3.5" />
+                            Briefing
+                          </Button>
+                        )}
+                        <Link to={`/${orgSlug}/sessions/${s.id}`}>
+                          <Button variant="outline" size="sm" className="h-8">
+                            {s.status === 'SCHEDULED' || s.status === 'IN_PROGRESS' ? 'Atender' : 'Ver Detalhes'}
+                          </Button>
+                        </Link>
+                      </div>
                     </TableCell>
                   </TableRow>
                 );
@@ -320,6 +341,18 @@ export function SessionsPage(): React.ReactNode {
           </div>
         )}
       </div>
+
+      {/* Briefing dialog */}
+      {briefingSession && (
+        <BriefingDialog
+          sessionId={briefingSession.id}
+          patientName={briefingSession.patientName}
+          open={!!briefingSession}
+          onOpenChange={(open) => {
+            if (!open) setBriefingSession(null);
+          }}
+        />
+      )}
     </div>
   );
 }

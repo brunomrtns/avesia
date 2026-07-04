@@ -1,16 +1,20 @@
-import { useEffect, useRef } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useParams, Link, useNavigate } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
-import { ArrowLeft } from 'lucide-react';
+import { ArrowLeft, ClipboardList, ChartLine, Sparkles } from 'lucide-react';
 
 import { api } from '@/lib/api-client';
 import { Badge } from '@/components/ui/badge';
+import { Button } from '@/components/ui/button';
 import { Skeleton } from '@/components/ui/skeleton';
 import { AudioConfigPanel } from '@/components/session-room/AudioConfigPanel';
+import { BriefingDialog } from '@/components/session-room/BriefingDialog';
 import { InsightsPanel } from '@/components/session-room/InsightsPanel';
+import { PostSessionAnalysisDialog } from '@/components/session-room/PostSessionAnalysisDialog';
 import { RecordingControls } from '@/components/session-room/RecordingControls';
 import { ResizableSplit } from '@/components/session-room/ResizableSplit';
+import { SOAPNoteDialog } from '@/components/session-room/SOAPNoteDialog';
 import { TranscriptPanel } from '@/components/session-room/TranscriptPanel';
 import { useSessionStore } from '@/stores/session-store';
 import type { ClinicalSession } from '@avesia/types';
@@ -27,6 +31,11 @@ export function SessionRoomPage(): React.ReactNode {
   const queryClient = useQueryClient();
 
   const store = useSessionStore();
+
+  // Dialog state
+  const [briefingOpen, setBriefingOpen] = useState(false);
+  const [soapOpen, setSoapOpen] = useState(false);
+  const [analysisOpen, setAnalysisOpen] = useState(false);
 
   // Refs for audio context
   const audioContextRef = useRef<AudioContext | null>(null);
@@ -401,6 +410,40 @@ export function SessionRoomPage(): React.ReactNode {
           onPauseToggle={handlePauseToggle}
           onEnd={handleEnd}
         />
+
+        {/* AI action buttons — visible when there's a transcript or session is scheduled */}
+        <div className="flex items-center gap-2">
+          {session.status === 'SCHEDULED' && (
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => setBriefingOpen(true)}
+            >
+              <Sparkles className="h-4 w-4 text-primary" />
+              Briefing
+            </Button>
+          )}
+          {segments.length > 0 && (
+            <>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => setSoapOpen(true)}
+              >
+                <ClipboardList className="h-4 w-4 text-primary" />
+                Nota SOAP
+              </Button>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => setAnalysisOpen(true)}
+              >
+                <ChartLine className="h-4 w-4 text-primary" />
+                Análise
+              </Button>
+            </>
+          )}
+        </div>
       </div>
 
       {/* Audio config */}
@@ -429,6 +472,26 @@ export function SessionRoomPage(): React.ReactNode {
             onGenerate={() => getInsightsMutation.mutate()}
           />
         }
+      />
+
+      {/* AI dialogs */}
+      <BriefingDialog
+        sessionId={session.id}
+        patientName={session.patient?.fullName ?? 'Paciente'}
+        open={briefingOpen}
+        onOpenChange={setBriefingOpen}
+      />
+      <SOAPNoteDialog
+        sessionId={session.id}
+        patientName={session.patient?.fullName ?? 'Paciente'}
+        open={soapOpen}
+        onOpenChange={setSoapOpen}
+      />
+      <PostSessionAnalysisDialog
+        sessionId={session.id}
+        patientName={session.patient?.fullName ?? 'Paciente'}
+        open={analysisOpen}
+        onOpenChange={setAnalysisOpen}
       />
     </div>
   );

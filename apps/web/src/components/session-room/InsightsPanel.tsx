@@ -130,6 +130,26 @@ export function InsightsPanel({ sessionId, hasSegments, onGenerate }: InsightsPa
   const neuralState: 'idle' | 'active' | 'processing' =
     copilotStatus === 'processing' ? 'processing' : copilotEnabled ? 'active' : 'idle';
 
+  // "Modo discreto/ativo" — quick toggle between two copilot presets.
+  const isDiscreteMode =
+    copilotSettings?.enabled &&
+    copilotSettings?.intensity === 'low' &&
+    !copilotSettings?.autoGenerate;
+
+  const handleModeToggle = useCallback(
+    (mode: 'discrete' | 'active') => {
+      if (!copilotSettings) return;
+      const preset =
+        mode === 'discrete'
+          ? { enabled: true, intensity: 'low' as const, autoGenerate: false }
+          : { enabled: true, intensity: 'medium' as const, autoGenerate: true };
+      const newSettings = { ...copilotSettings, ...preset };
+      setCopilotSettings(newSettings);
+      api.sessions.updateCopilotSettings(sessionId, preset).then(setCopilotSettings).catch(() => {});
+    },
+    [copilotSettings, sessionId, setCopilotSettings],
+  );
+
   return (
     <div className="flex h-full min-w-0 flex-col overflow-hidden rounded-lg border border-border bg-surface shadow-sm">
       {/* Header — ambient AI presence */}
@@ -180,6 +200,34 @@ export function InsightsPanel({ sessionId, hasSegments, onGenerate }: InsightsPa
             </Button>
           </div>
         </div>
+
+        {/* Modo discreto/ativo — quick toggle */}
+        {copilotSettings?.enabled && (
+          <div className="relative mt-2 flex items-center gap-1">
+            <button
+              onClick={() => handleModeToggle('discrete')}
+              className={cn(
+                'flex-1 rounded-md px-2 py-1 text-[11px] font-medium transition-all duration-200',
+                isDiscreteMode
+                  ? 'bg-primary/10 text-primary'
+                  : 'text-foreground-muted hover:bg-surface-elevated',
+              )}
+            >
+              Discreto
+            </button>
+            <button
+              onClick={() => handleModeToggle('active')}
+              className={cn(
+                'flex-1 rounded-md px-2 py-1 text-[11px] font-medium transition-all duration-200',
+                !isDiscreteMode
+                  ? 'bg-primary/10 text-primary'
+                  : 'text-foreground-muted hover:bg-surface-elevated',
+              )}
+            >
+              Ativo
+            </button>
+          </div>
+        )}
       </div>
 
       {/* Settings panel (collapsible) */}
