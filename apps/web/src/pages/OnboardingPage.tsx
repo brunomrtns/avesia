@@ -187,7 +187,7 @@ export function OnboardingPage(): React.ReactNode {
       </div>
 
       {/* Steps checklist */}
-      {data && (data.completedSteps.length > 0 || data.pendingSteps.length > 0) && (
+      {data && (data.completedSteps?.length > 0 || data.pendingSteps?.length > 0) && (
         <Card>
           <CardContent className="space-y-3 p-5">
             <h3 className="text-sm font-semibold text-foreground">Etapas de Configuração</h3>
@@ -210,7 +210,7 @@ export function OnboardingPage(): React.ReactNode {
       )}
 
       {/* Suggestions */}
-      {data && data.suggestions.length > 0 && (
+      {data && data.suggestions?.length > 0 && (
         <Card>
           <CardContent className="space-y-4 p-5">
             <div className="flex items-center gap-2">
