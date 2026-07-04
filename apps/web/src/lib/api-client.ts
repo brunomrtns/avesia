@@ -140,6 +140,138 @@ export interface PostSessionAnalysisResponse {
 
 // ── Dashboard stats ─────────────────────────────────────────────────────────
 
+// ── Gap analysis types ──────────────────────────────────────────────────────
+
+export interface GapAnalysisItem {
+  topic: string;
+  status: 'covered' | 'partial' | 'missing';
+  confidence: number;
+  suggestion?: string;
+}
+
+export interface GapAnalysis {
+  items: GapAnalysisItem[];
+  overallCoverage: number;
+  generatedAt: string;
+}
+
+// ── Session recording (audio) types ─────────────────────────────────────────
+
+export interface SessionRecording {
+  id: string;
+  sessionId: string;
+  fileName: string;
+  mimeType: string;
+  sizeBytes: number;
+  durationSeconds?: number;
+  status: 'UPLOADED' | 'PROCESSING' | 'TRANSCRIBED' | 'FAILED';
+  transcriptionProgress?: number;
+  errorMessage?: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+// ── Consent types ───────────────────────────────────────────────────────────
+
+export interface Consent {
+  id: string;
+  patientId: string;
+  type: string;
+  granted: boolean;
+  notes?: string;
+  grantedAt?: string;
+  revokedAt?: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+// ── Patient timeline / profile / memory types ───────────────────────────────
+
+export interface TimelineEntry {
+  id: string;
+  type: 'SESSION' | 'NOTE' | 'ANALYSIS' | 'CONSENT' | 'ALERT';
+  title: string;
+  description?: string;
+  date: string;
+  sessionId?: string;
+  metadata?: Record<string, unknown>;
+}
+
+export interface PatientTimeline {
+  entries: TimelineEntry[];
+  totalSessions: number;
+  totalNotes: number;
+}
+
+export interface PatientProfile {
+  patientId: string;
+  summary: string;
+  keyThemes: string[];
+  sessionCount: number;
+  lastSessionDate?: string;
+  riskLevel?: 'low' | 'medium' | 'high';
+  treatmentGoals?: string[];
+}
+
+export interface PatientMemory {
+  patientId: string;
+  summary: string;
+  keyThemes: Array<{ theme: string; frequency: number; lastMentioned: string }>;
+  importantEvents: Array<{ event: string; date: string }>;
+  preferences?: string[];
+  sessionCount: number;
+}
+
+// ── Onboarding types ────────────────────────────────────────────────────────
+
+export interface OnboardingSuggestion {
+  type: 'topic' | 'specialty' | 'document' | 'action';
+  label: string;
+  description?: string;
+  priority: 'high' | 'medium' | 'low';
+}
+
+export interface OnboardingSuggestions {
+  suggestions: OnboardingSuggestion[];
+  progress: {
+    documentsUploaded: number;
+    conceptsExtracted: number;
+    topicsCreated: number;
+    sessionsCreated: number;
+    patientsCreated: number;
+  };
+  completedSteps: string[];
+  pendingSteps: string[];
+}
+
+// ── Clinical alert types ────────────────────────────────────────────────────
+
+export interface ClinicalAlert {
+  id: string;
+  patientId: string;
+  patientName?: string;
+  sessionId?: string;
+  severity: 'low' | 'medium' | 'high' | 'critical';
+  type: string;
+  message: string;
+  acknowledged: boolean;
+  acknowledgedAt?: string;
+  acknowledgedBy?: string;
+  createdAt: string;
+}
+
+// ── API key types ───────────────────────────────────────────────────────────
+
+export interface ApiKey {
+  id: string;
+  name: string;
+  keyPrefix: string;
+  lastUsedAt?: string;
+  expiresAt?: string;
+  createdAt: string;
+  revokedAt?: string;
+}
+
 export interface DashboardStats {
   patients: {
     total: number;
@@ -311,12 +443,26 @@ async function refreshAccessToken(): Promise<string | null> {
   }
 }
 
+/**
+ * Returns auth headers for direct fetch calls (e.g. Blob downloads).
+ */
+export function authHeaders(): Record<string, string> {
+  const headers: Record<string, string> = {};
+  if (accessToken) {
+    headers.Authorization = `Bearer ${accessToken}`;
+  }
+  return headers;
+}
+
 export async function request<T>(path: string, options: RequestOptions = {}): Promise<T> {
   const { method = 'GET', body, params } = options;
 
-  const headers: Record<string, string> = {
-    'Content-Type': 'application/json',
-  };
+  const isFormData = body instanceof FormData;
+  const headers: Record<string, string> = {};
+
+  if (!isFormData) {
+    headers['Content-Type'] = 'application/json';
+  }
 
   if (accessToken) {
     headers.Authorization = `Bearer ${accessToken}`;
@@ -327,7 +473,7 @@ export async function request<T>(path: string, options: RequestOptions = {}): Pr
     headers,
   };
   if (body !== undefined) {
-    fetchOptions.body = JSON.stringify(body);
+    fetchOptions.body = isFormData ? (body as FormData) : JSON.stringify(body);
   } else if (method === 'POST' || method === 'PATCH' || method === 'PUT') {
     fetchOptions.body = JSON.stringify({});
   }
@@ -349,7 +495,7 @@ export async function request<T>(path: string, options: RequestOptions = {}): Pr
         headers,
       };
       if (body !== undefined) {
-        retryOptions.body = JSON.stringify(body);
+        retryOptions.body = isFormData ? (body as FormData) : JSON.stringify(body);
       } else if (method === 'POST' || method === 'PATCH' || method === 'PUT') {
         retryOptions.body = JSON.stringify({});
       }
@@ -408,6 +554,12 @@ export const api = {
       request<PatientResponse>(`/patients/${id}`, { method: 'PATCH', body: data }),
     delete: (id: string): Promise<void> =>
       request<void>(`/patients/${id}`, { method: 'DELETE' }),
+    getTimeline: (id: string): Promise<PatientTimeline> =>
+      request<PatientTimeline>(`/patients/${id}/timeline`),
+    getProfile: (id: string): Promise<PatientProfile> =>
+      request<PatientProfile>(`/patients/${id}/profile`),
+    getMemory: (id: string): Promise<PatientMemory> =>
+      request<PatientMemory>(`/patients/${id}/memory`),
   },
 
   sessions: {
@@ -445,6 +597,18 @@ export const api = {
     // Post-session analysis (summary + clinical analysis)
     generateAnalysis: (id: string): Promise<PostSessionAnalysisResponse> =>
       request<PostSessionAnalysisResponse>(`/sessions/${id}/analyze`, { method: 'POST' }),
+    // Audio recordings
+    uploadAudio: (id: string, file: File): Promise<SessionRecording> => {
+      const formData = new FormData();
+      formData.append('file', file);
+      return request<SessionRecording>(`/sessions/${id}/audio`, { method: 'POST', body: formData });
+    },
+    listAudio: (id: string): Promise<SessionRecording[]> =>
+      request<SessionRecording[]>(`/sessions/${id}/audio`),
+    getAudio: (id: string, recordingId: string): Promise<SessionRecording> =>
+      request<SessionRecording>(`/sessions/${id}/audio/${recordingId}`),
+    deleteAudio: (id: string, recordingId: string): Promise<void> =>
+      request<void>(`/sessions/${id}/audio/${recordingId}`, { method: 'DELETE' }),
   },
 
   organization: {
@@ -481,5 +645,47 @@ export const api = {
       request<T>(`/ai-providers/${id}/fallback`, { method: 'PUT' }),
     test: <T>(id: string): Promise<T> =>
       request<T>(`/ai-providers/${id}/test`, { method: 'POST' }),
+  },
+
+  gaps: {
+    get: (): Promise<GapAnalysis> => request<GapAnalysis>('/gap-analysis'),
+  },
+
+  consents: {
+    list: (patientId: string): Promise<Consent[]> =>
+      request<Consent[]>(`/patients/${patientId}/consents`),
+    create: (patientId: string, data: { type: string; granted: boolean; notes?: string }): Promise<Consent> =>
+      request<Consent>(`/patients/${patientId}/consents`, { method: 'POST', body: data }),
+    update: (id: string, data: Partial<Consent>): Promise<Consent> =>
+      request<Consent>(`/consents/${id}`, { method: 'PATCH', body: data }),
+  },
+
+  reports: {
+    sessionsCsv: (): Promise<Blob> =>
+      fetch(buildUrl('/reports/sessions.csv'), { headers: authHeaders() }).then((r) => r.blob()),
+    patientsCsv: (): Promise<Blob> =>
+      fetch(buildUrl('/reports/patients.csv'), { headers: authHeaders() }).then((r) => r.blob()),
+    clinicalNotesCsv: (): Promise<Blob> =>
+      fetch(buildUrl('/reports/clinical-notes.csv'), { headers: authHeaders() }).then((r) => r.blob()),
+  },
+
+  onboarding: {
+    getSuggestions: (): Promise<OnboardingSuggestions> =>
+      request<OnboardingSuggestions>('/onboarding/suggestions'),
+  },
+
+  alerts: {
+    list: (params?: { acknowledged?: boolean; patientId?: string; severity?: string }): Promise<ClinicalAlert[]> =>
+      request<ClinicalAlert[]>('/alerts', params ? { params: params as Record<string, string | number | undefined> } : {}),
+    acknowledge: (id: string): Promise<ClinicalAlert> =>
+      request<ClinicalAlert>(`/alerts/${id}/acknowledge`, { method: 'PATCH' }),
+  },
+
+  apiKeys: {
+    list: (): Promise<ApiKey[]> => request<ApiKey[]>('/api-keys'),
+    create: (data: { name: string; expiresAt?: string }): Promise<{ apiKey: ApiKey; key: string }> =>
+      request<{ apiKey: ApiKey; key: string }>('/api-keys', { method: 'POST', body: data }),
+    revoke: (id: string): Promise<void> =>
+      request<void>(`/api-keys/${id}`, { method: 'DELETE' }),
   },
 };

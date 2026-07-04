@@ -29,6 +29,18 @@ const SettingsPage = lazy(() =>
 const AIProvidersPage = lazy(() =>
   import('@/pages/AIProvidersPage').then((m) => ({ default: m.AIProvidersPage })),
 );
+const PatientDetailPage = lazy(() =>
+  import('@/pages/PatientDetailPage').then((m) => ({ default: m.PatientDetailPage })),
+);
+const ReportsPage = lazy(() =>
+  import('@/pages/ReportsPage').then((m) => ({ default: m.ReportsPage })),
+);
+const OnboardingPage = lazy(() =>
+  import('@/pages/OnboardingPage').then((m) => ({ default: m.OnboardingPage })),
+);
+const ApiKeysPage = lazy(() =>
+  import('@/pages/ApiKeysPage').then((m) => ({ default: m.ApiKeysPage })),
+);
 
 function PageLoader() {
   return (
@@ -61,6 +73,14 @@ export default function App(): React.ReactNode {
             element={
               <Suspense fallback={<PageLoader />}>
                 <PatientsPage />
+              </Suspense>
+            }
+          />
+          <Route
+            path="patients/:id"
+            element={
+              <Suspense fallback={<PageLoader />}>
+                <PatientDetailPage />
               </Suspense>
             }
           />
@@ -101,6 +121,30 @@ export default function App(): React.ReactNode {
             element={
               <Suspense fallback={<PageLoader />}>
                 <AIProvidersPage />
+              </Suspense>
+            }
+          />
+          <Route
+            path="reports"
+            element={
+              <Suspense fallback={<PageLoader />}>
+                <ReportsPage />
+              </Suspense>
+            }
+          />
+          <Route
+            path="onboarding"
+            element={
+              <Suspense fallback={<PageLoader />}>
+                <OnboardingPage />
+              </Suspense>
+            }
+          />
+          <Route
+            path="api-keys"
+            element={
+              <Suspense fallback={<PageLoader />}>
+                <ApiKeysPage />
               </Suspense>
             }
           />

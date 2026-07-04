@@ -57,6 +57,9 @@ model Organization {
   professionalPatients ProfessionalPatient[]
   knowledgeBases KnowledgeBase[]
   aiProviderConfigs AIProviderConfig[]
+  patientMemories   PatientMemory[]
+  apiKeys           ApiKey[]
+  clinicalAlerts    ClinicalAlert[]
 
   @@map("organizations")
 }
@@ -89,6 +92,7 @@ model User {
   attachments     Attachment[]
   auditLogs       AuditLog[]
   refreshTokens   RefreshToken[]
+  acknowledgedAlerts ClinicalAlert[] @relation("AlertAcknowledgedBy")
 
   @@unique([organizationId, email])
   @@index([organizationId])
@@ -172,6 +176,8 @@ model Patient {
   professionals ProfessionalPatient[]
   consents     Consent[]
   attachments  Attachment[]
+  memory       PatientMemory?
+  alerts       ClinicalAlert[]
 
   // PostgreSQL allows multiple NULLs in unique constraint — partial unique behavior
   @@unique([organizationId, email])
@@ -234,6 +240,7 @@ model ClinicalSession {
   copilotAnalyses      SessionCopilotAnalysis[]
   attachments  Attachment[]
   transcripts  Transcript[]
+  alerts       ClinicalAlert[]
 
   @@index([organizationId])
   @@index([organizationId, status])
@@ -379,7 +386,7 @@ model AIAnalysis {
   organizationId  String    @map("organization_id")
   sessionId       String    @map("session_id")
   transcriptId    String?   @map("transcript_id")
-  /// Allowed values: SUMMARY | TOPICS | KEYWORDS | INSIGHTS | TREATMENT_PLAN
+  /// Allowed values: SUMMARY | TOPICS | KEYWORDS | INSIGHTS | TREATMENT_PLAN | BRIEFING
   type            String
   /// Provider: openrouter | nvidia-nim | ollama
   provider        String
@@ -869,5 +876,80 @@ model AIProviderConfig {
   @@unique([organizationId, provider])
   @@index([organizationId])
   @@map("ai_provider_configs")
+}
+
+// ============================================================================
+//  27. PatientMemory — Accumulated longitudinal memory per patient (F3)
+//      Updated after each session. Contains a rolling summary + key themes.
+// ============================================================================
+model PatientMemory {
+  id              String    @id @default(cuid())
+  organizationId  String    @map("organization_id")
+  patientId       String    @unique @map("patient_id")
+  summary         String    @default("")
+  keyThemes       String[]  @default([]) @map("key_themes")
+  sessionCount    Int       @default(0) @map("session_count")
+  lastSessionId   String?   @map("last_session_id")
+  lastUpdatedAt   DateTime? @map("last_updated_at")
+  createdAt       DateTime  @default(now()) @map("created_at")
+  updatedAt       DateTime  @updatedAt @map("updated_at")
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  patient      Patient      @relation(fields: [patientId], references: [id], onDelete: Cascade)
+
+  @@index([organizationId])
+  @@map("patient_memories")
+}
+
+// ============================================================================
+//  28. ApiKey — Public API access keys (F3)
+// ============================================================================
+model ApiKey {
+  id              String    @id @default(cuid())
+  organizationId  String    @map("organization_id")
+  name            String
+  keyHash         String    @unique @map("key_hash")
+  keyPrefix       String    @default("") @map("key_prefix")
+  lastUsedAt      DateTime? @map("last_used_at")
+  expiresAt       DateTime? @map("expires_at")
+  revokedAt       DateTime? @map("revoked_at")
+  createdAt       DateTime  @default(now()) @map("created_at")
+  updatedAt       DateTime  @updatedAt @map("updated_at")
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@index([organizationId])
+  @@map("api_keys")
+}
+
+// ============================================================================
+//  29. ClinicalAlert — Risk and pattern alerts (F3)
+// ============================================================================
+model ClinicalAlert {
+  id              String    @id @default(cuid())
+  organizationId  String    @map("organization_id")
+  patientId       String    @map("patient_id")
+  sessionId       String?   @map("session_id")
+  /// Allowed values: RISK | PATTERN | IMPROVEMENT | GAP
+  type            String
+  /// Allowed values: LOW | MEDIUM | HIGH
+  severity        String    @default("MEDIUM")
+  description     String
+  metadata        Json      @default("{}")
+  acknowledged    Boolean   @default(false)
+  acknowledgedById String?  @map("acknowledged_by_id")
+  acknowledgedAt  DateTime? @map("acknowledged_at")
+  createdAt       DateTime  @default(now()) @map("created_at")
+  updatedAt       DateTime  @updatedAt @map("updated_at")
+
+  organization Organization    @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  patient      Patient         @relation(fields: [patientId], references: [id], onDelete: Cascade)
+  session      ClinicalSession? @relation(fields: [sessionId], references: [id], onDelete: SetNull)
+  acknowledgedBy User?         @relation("AlertAcknowledgedBy", fields: [acknowledgedById], references: [id], onDelete: SetNull)
+
+  @@index([organizationId])
+  @@index([patientId])
+  @@index([organizationId, acknowledged])
+  @@map("clinical_alerts")
 }
 

@@ -2,9 +2,38 @@ import path from 'node:path';
 
 import react from '@vitejs/plugin-react';
 import { defineConfig } from 'vite';
+import { VitePWA } from 'vite-plugin-pwa';
 
 export default defineConfig({
-  plugins: [react()],
+  plugins: [
+    react(),
+    VitePWA({
+      registerType: 'autoUpdate',
+      manifest: {
+        name: 'Avesia',
+        short_name: 'Avesia',
+        description: 'Plataforma de inteligência clínica',
+        theme_color: '#0d9488',
+        background_color: '#0a0a0a',
+        display: 'standalone',
+        icons: [
+          {
+            src: '/icon-192.png',
+            sizes: '192x192',
+            type: 'image/png',
+          },
+          {
+            src: '/icon-512.png',
+            sizes: '512x512',
+            type: 'image/png',
+          },
+        ],
+      },
+      workbox: {
+        navigateFallback: 'index.html',
+      },
+    }),
+  ],
   // In production, the SPA is served under /avesia/ prefix.
   // In dev, Vite serves from root.
   base: process.env.NODE_ENV === 'production' ? '/avesia/' : '/',

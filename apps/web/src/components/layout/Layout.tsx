@@ -5,10 +5,13 @@ import {
   ChevronLeft,
   Command as CommandIcon,
   Cpu,
+  FileBarChart,
+  KeyRound,
   LayoutDashboard,
   LogOut,
   Menu,
   Moon,
+  Rocket,
   Settings,
   Sun,
   Users,
@@ -55,7 +58,10 @@ const NAV_ITEMS: readonly NavItem[] = [
   { label: 'Pacientes', path: 'patients', icon: <Users className="h-[18px] w-[18px]" />, shortcut: 'G P' },
   { label: 'Sessões', path: 'sessions', icon: <Calendar className="h-[18px] w-[18px]" />, shortcut: 'G S' },
   { label: 'Base de Conhecimento', path: 'knowledge-base', icon: <BookOpen className="h-[18px] w-[18px]" />, shortcut: 'G K' },
+  { label: 'Onboarding', path: 'onboarding', icon: <Rocket className="h-[18px] w-[18px]" />, shortcut: 'G O' },
+  { label: 'Relatórios', path: 'reports', icon: <FileBarChart className="h-[18px] w-[18px]" />, shortcut: 'G R' },
   { label: 'Provedores de IA', path: 'ai-providers', icon: <Cpu className="h-[18px] w-[18px]" />, shortcut: 'G A' },
+  { label: 'Chaves de API', path: 'api-keys', icon: <KeyRound className="h-[18px] w-[18px]" />, shortcut: 'G V' },
   { label: 'Configurações', path: 'settings', icon: <Settings className="h-[18px] w-[18px]" />, shortcut: 'G C' },
 ];
 
@@ -64,7 +70,10 @@ const PAGE_TITLES: Record<string, string> = {
   patients: 'Pacientes',
   sessions: 'Sessões',
   'knowledge-base': 'Base de Conhecimento',
+  onboarding: 'Onboarding',
+  reports: 'Relatórios',
   'ai-providers': 'Provedores de IA',
+  'api-keys': 'Chaves de API',
   settings: 'Configurações',
 };
 
@@ -91,9 +100,9 @@ export function Layout(): ReactNode {
   const pathAfterSlug = location.pathname.replace(`/${orgSlug}`, '').replace(/^\//, '');
   const pageTitle = PAGE_TITLES[pathAfterSlug] ?? BRAND.name;
 
-  // Filter nav items by role — AI Providers only for OWNER/ADMIN
+  // Filter nav items by role — AI Providers and API Keys only for OWNER/ADMIN
   const visibleNavItems = NAV_ITEMS.filter((item) => {
-    if (item.path === 'ai-providers') {
+    if (item.path === 'ai-providers' || item.path === 'api-keys') {
       return auth.user?.role === 'OWNER' || auth.user?.role === 'ADMIN';
     }
     return true;

@@ -19,6 +19,16 @@ import healthRoutes from './routes/health.js';
 import knowledgeBaseRoutes from './routes/knowledge-base.js';
 import aiProviderRoutes from './routes/ai-providers.js';
 import statsRoutes from './routes/stats.js';
+import gapRoutes from './routes/gaps.js';
+import audioUploadRoutes from './routes/audio-upload.js';
+import consentRoutes from './routes/consents.js';
+import reportRoutes from './routes/reports.js';
+import onboardingRoutes from './routes/onboarding.js';
+import alertRoutes from './routes/alerts.js';
+import publicApiRoutes from './routes/public-api.js';
+import apiKeyRoutes from './routes/api-keys.js';
+import workerHeartbeatRoutes from './routes/worker-heartbeat.js';
+import transcriptReceiverRoutes from './routes/transcript-receiver.js';
 import { startCopilotSweep, stopCopilotSweep } from './services/session-copilot-service.js';
 
 async function bootstrap(): Promise<void> {
@@ -36,7 +46,7 @@ async function bootstrap(): Promise<void> {
   await app.register(tenantPlugin);
   await app.register(multipart, {
     limits: {
-      fileSize: 50 * 1024 * 1024, // 50MB
+      fileSize: 500 * 1024 * 1024, // 500MB — audio files can be large
       files: 1,
     },
   });
@@ -55,6 +65,19 @@ async function bootstrap(): Promise<void> {
   await app.register(knowledgeBaseRoutes);
   await app.register(aiProviderRoutes);
   await app.register(statsRoutes);
+  await app.register(gapRoutes);
+  await app.register(audioUploadRoutes);
+  await app.register(consentRoutes);
+  await app.register(reportRoutes);
+  await app.register(onboardingRoutes);
+  await app.register(alertRoutes);
+  await app.register(apiKeyRoutes);
+  // Public API routes use API key auth (not JWT) — registered separately.
+  await app.register(publicApiRoutes);
+  // Worker-facing routes (JWT OR API key auth — registered before standard
+  // routes so they use their own auth hook instead of requireAuth/requireTenant)
+  await app.register(workerHeartbeatRoutes);
+  await app.register(transcriptReceiverRoutes);
 
   // --- Start copilot periodic sweep ---
   // This ensures sessions with pending segments get processed even if the

@@ -236,6 +236,185 @@ const patientRoutes: FastifyPluginAsync = async (app): Promise<void> => {
       return reply.status(204).send();
     },
   );
+
+  // ── GET /patients/:id/timeline ────────────────────────────────────────
+  // Returns sessions for the patient ordered by date, with notes and AI
+  // analyses summary for each session.
+  app.get('/patients/:id/timeline', async (request: FastifyRequest, _reply) => {
+    const { id } = request.params as { id: string };
+
+    const patient = await app.prisma.patient.findFirst({
+      where: { id, organizationId: request.organizationId, deletedAt: null },
+    });
+    if (!patient) {
+      throw new NotFoundError('Patient', id);
+    }
+
+    const sessions = await app.prisma.clinicalSession.findMany({
+      where: { patientId: id, organizationId: request.organizationId },
+      orderBy: { scheduledAt: 'desc' },
+      include: {
+        professional: { select: { id: true, fullName: true } },
+        notes: {
+          orderBy: { createdAt: 'desc' },
+          select: {
+            id: true,
+            version: true,
+            status: true,
+            content: true,
+            createdAt: true,
+          },
+        },
+        aiAnalyses: {
+          where: { status: 'COMPLETED' },
+          orderBy: { createdAt: 'desc' },
+          select: {
+            id: true,
+            type: true,
+            provider: true,
+            model: true,
+            createdAt: true,
+          },
+          take: 5,
+        },
+      },
+    });
+
+    return {
+      patient: {
+        id: patient.id,
+        fullName: patient.fullName,
+        tags: patient.tags,
+      },
+      sessions: sessions.map((s) => ({
+        id: s.id,
+        scheduledAt: s.scheduledAt,
+        status: s.status,
+        type: s.type,
+        location: s.location,
+        summary: s.summary,
+        professionalName: s.professional?.fullName ?? '—',
+        notes: s.notes,
+        aiAnalyses: s.aiAnalyses,
+      })),
+    };
+  });
+
+  // ── GET /patients/:id/profile ─────────────────────────────────────────
+  // Returns patient + memory (PatientMemory) + recent alerts + session stats.
+  app.get('/patients/:id/profile', async (request: FastifyRequest, _reply) => {
+    const { id } = request.params as { id: string };
+
+    const patient = await app.prisma.patient.findFirst({
+      where: { id, organizationId: request.organizationId, deletedAt: null },
+    });
+    if (!patient) {
+      throw new NotFoundError('Patient', id);
+    }
+
+    const [memory, recentAlerts, totalSessions, completedSessions, lastSession] = await Promise.all([
+      app.prisma.patientMemory.findUnique({
+        where: { patientId: id },
+      }),
+      app.prisma.clinicalAlert.findMany({
+        where: { patientId: id, organizationId: request.organizationId },
+        orderBy: { createdAt: 'desc' },
+        take: 10,
+      }),
+      app.prisma.clinicalSession.count({
+        where: { patientId: id, organizationId: request.organizationId },
+      }),
+      app.prisma.clinicalSession.count({
+        where: { patientId: id, organizationId: request.organizationId, status: 'COMPLETED' },
+      }),
+      app.prisma.clinicalSession.findFirst({
+        where: { patientId: id, organizationId: request.organizationId },
+        orderBy: { scheduledAt: 'desc' },
+        select: { id: true, scheduledAt: true, type: true, status: true },
+      }),
+    ]);
+
+    return {
+      patient,
+      memory,
+      recentAlerts,
+      sessionStats: {
+        total: totalSessions,
+        completed: completedSessions,
+        lastSession,
+      },
+    };
+  });
+
+  // ── GET /patients/:id/memory ──────────────────────────────────────────
+  // Returns PatientMemory for the patient (creates empty if not exists).
+  app.get('/patients/:id/memory', async (request: FastifyRequest, _reply) => {
+    const { id } = request.params as { id: string };
+
+    const patient = await app.prisma.patient.findFirst({
+      where: { id, organizationId: request.organizationId, deletedAt: null },
+    });
+    if (!patient) {
+      throw new NotFoundError('Patient', id);
+    }
+
+    const memory = await app.prisma.patientMemory.upsert({
+      where: { patientId: id },
+      create: {
+        id: generateId(),
+        organizationId: request.organizationId,
+        patientId: id,
+        summary: '',
+        keyThemes: [],
+        sessionCount: 0,
+      },
+      update: {},
+    });
+
+    return memory;
+  });
+
+  // ── PUT /patients/:id/memory ──────────────────────────────────────────
+  // Updates PatientMemory (used internally after session analysis).
+  app.put('/patients/:id/memory', async (request: FastifyRequest, _reply) => {
+    const { id } = request.params as { id: string };
+    const body = request.body as {
+      summary?: string;
+      keyThemes?: string[];
+      sessionCount?: number;
+      lastSessionId?: string | null;
+    };
+
+    const patient = await app.prisma.patient.findFirst({
+      where: { id, organizationId: request.organizationId, deletedAt: null },
+    });
+    if (!patient) {
+      throw new NotFoundError('Patient', id);
+    }
+
+    const data: Record<string, unknown> = { lastUpdatedAt: new Date() };
+    if (body.summary !== undefined) data['summary'] = body.summary;
+    if (body.keyThemes !== undefined) data['keyThemes'] = body.keyThemes;
+    if (body.sessionCount !== undefined) data['sessionCount'] = body.sessionCount;
+    if (body.lastSessionId !== undefined) data['lastSessionId'] = body.lastSessionId ?? null;
+
+    const memory = await app.prisma.patientMemory.upsert({
+      where: { patientId: id },
+      create: {
+        id: generateId(),
+        organizationId: request.organizationId,
+        patientId: id,
+        summary: body.summary ?? '',
+        keyThemes: body.keyThemes ?? [],
+        sessionCount: body.sessionCount ?? 0,
+        lastSessionId: body.lastSessionId ?? null,
+        lastUpdatedAt: new Date(),
+      },
+      update: data,
+    });
+
+    return memory;
+  });
 };
 
 export default patientRoutes;

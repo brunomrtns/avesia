@@ -2,13 +2,14 @@ import { useEffect, useRef, useState } from 'react';
 import { useParams, Link, useNavigate } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
-import { ArrowLeft, ClipboardList, ChartLine, Sparkles } from 'lucide-react';
+import { ArrowLeft, ClipboardList, ChartLine, Sparkles, Upload } from 'lucide-react';
 
 import { api } from '@/lib/api-client';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Skeleton } from '@/components/ui/skeleton';
 import { AudioConfigPanel } from '@/components/session-room/AudioConfigPanel';
+import { AudioUploadDialog } from '@/components/session-room/AudioUploadDialog';
 import { BriefingDialog } from '@/components/session-room/BriefingDialog';
 import { InsightsPanel } from '@/components/session-room/InsightsPanel';
 import { PostSessionAnalysisDialog } from '@/components/session-room/PostSessionAnalysisDialog';
@@ -36,6 +37,7 @@ export function SessionRoomPage(): React.ReactNode {
   const [briefingOpen, setBriefingOpen] = useState(false);
   const [soapOpen, setSoapOpen] = useState(false);
   const [analysisOpen, setAnalysisOpen] = useState(false);
+  const [audioUploadOpen, setAudioUploadOpen] = useState(false);
 
   // Refs for audio context
   const audioContextRef = useRef<AudioContext | null>(null);
@@ -413,6 +415,14 @@ export function SessionRoomPage(): React.ReactNode {
 
         {/* AI action buttons — visible when there's a transcript or session is scheduled */}
         <div className="flex items-center gap-2">
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => setAudioUploadOpen(true)}
+          >
+            <Upload className="h-4 w-4 text-primary" />
+            Upload Áudio
+          </Button>
           {session.status === 'SCHEDULED' && (
             <Button
               variant="outline"
@@ -475,6 +485,11 @@ export function SessionRoomPage(): React.ReactNode {
       />
 
       {/* AI dialogs */}
+      <AudioUploadDialog
+        sessionId={session.id}
+        open={audioUploadOpen}
+        onOpenChange={setAudioUploadOpen}
+      />
       <BriefingDialog
         sessionId={session.id}
         patientName={session.patient?.fullName ?? 'Paciente'}
