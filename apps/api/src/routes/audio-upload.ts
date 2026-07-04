@@ -24,6 +24,45 @@ const audioUploadRoutes: FastifyPluginAsync = async (app): Promise<void> => {
   app.addHook('onRequest', requireAuth);
   app.addHook('preHandler', requireTenant);
 
+  // ── GET /recordings ───────────────────────────────────────────────────
+  // List all recordings for the org (for the Processamento page).
+  app.get('/recordings', async (request: FastifyRequest, _reply) => {
+    const query = request.query as { status?: string; page?: string; pageSize?: string };
+    const page = Number(query.page) || 1;
+    const pageSize = Number(query.pageSize) || 20;
+    const where: Record<string, unknown> = { organizationId: request.organizationId };
+    if (query.status) where['status'] = query.status;
+
+    const [items, total] = await Promise.all([
+      app.prisma.sessionRecording.findMany({
+        where,
+        skip: (page - 1) * pageSize,
+        take: pageSize,
+        orderBy: { createdAt: 'desc' },
+        include: {
+          session: {
+            select: {
+              id: true,
+              scheduledAt: true,
+              patient: { select: { id: true, fullName: true } },
+            },
+          },
+        },
+      }),
+      app.prisma.sessionRecording.count({ where }),
+    ]);
+
+    return {
+      items: items.map((r) => ({
+        ...r,
+        sizeBytes: r.sizeBytes?.toString() ?? null,
+      })),
+      page,
+      pageSize,
+      total,
+    };
+  });
+
   // ── POST /sessions/:id/audio ──────────────────────────────────────────
   // Multipart file upload. Saves to MinIO, creates a SessionRecording, and
   // enqueues a transcription task to the Python Celery worker.

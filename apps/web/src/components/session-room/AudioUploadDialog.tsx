@@ -41,15 +41,22 @@ const MAX_FILE_SIZE = 500 * 1024 * 1024; // 500 MB
 const STATUS_CONFIG: Record<string, { label: string; variant: 'default' | 'secondary' | 'warning' | 'success' | 'destructive' | 'outline' }> = {
   UPLOADED: { label: 'Enviado', variant: 'outline' },
   PROCESSING: { label: 'Processando', variant: 'warning' },
-  TRANSCRIBED: { label: 'Transcrito', variant: 'success' },
+  COMPLETED: { label: 'Concluído', variant: 'success' },
   FAILED: { label: 'Falhou', variant: 'destructive' },
 };
 
-function formatBytes(bytes: number): string {
-  if (bytes < 1024) return `${bytes} B`;
-  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
-  if (bytes < 1024 * 1024 * 1024) return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
-  return `${(bytes / (1024 * 1024 * 1024)).toFixed(1)} GB`;
+function formatBytes(bytes: string | number | null | undefined): string {
+  const n = typeof bytes === 'string' ? Number(bytes) : bytes;
+  if (!n || isNaN(n)) return '—';
+  if (n < 1024) return `${n} B`;
+  if (n < 1024 * 1024) return `${(n / 1024).toFixed(1)} KB`;
+  if (n < 1024 * 1024 * 1024) return `${(n / (1024 * 1024)).toFixed(1)} MB`;
+  return `${(n / (1024 * 1024 * 1024)).toFixed(1)} GB`;
+}
+
+function fileNameFromStorageKey(key: string): string {
+  const parts = key.split('/');
+  return parts[parts.length - 1] ?? key;
 }
 
 export function AudioUploadDialog({ sessionId, open, onOpenChange }: AudioUploadDialogProps): React.ReactNode {
@@ -136,7 +143,7 @@ export function AudioUploadDialog({ sessionId, open, onOpenChange }: AudioUpload
   };
 
   const handleDelete = (recording: SessionRecording) => {
-    if (window.confirm(`Remover a gravação "${recording.fileName}"?`)) {
+    if (window.confirm(`Remover a gravação "${fileNameFromStorageKey(recording.storageKey)}"?`)) {
       deleteMutation.mutate(recording.id);
     }
   };
@@ -249,7 +256,7 @@ export function AudioUploadDialog({ sessionId, open, onOpenChange }: AudioUpload
                     className="flex items-center gap-3 rounded-lg border border-border bg-surface p-3 transition-all duration-200 hover:border-border-hover"
                   >
                     <div className="shrink-0">
-                      {recording.status === 'TRANSCRIBED' ? (
+                      {recording.status === 'COMPLETED' ? (
                         <CheckCircle2 className="h-5 w-5 text-success" />
                       ) : isProcessing ? (
                         <Loader2 className="h-5 w-5 animate-spin text-warning" />
@@ -261,7 +268,7 @@ export function AudioUploadDialog({ sessionId, open, onOpenChange }: AudioUpload
                     </div>
                     <div className="flex-1 overflow-hidden space-y-1">
                       <p className="truncate text-sm font-medium text-foreground">
-                        {recording.fileName}
+                        {fileNameFromStorageKey(recording.storageKey)}
                       </p>
                       <div className="flex items-center gap-2 text-[11px] text-foreground-muted">
                         <span>{formatBytes(recording.sizeBytes)}</span>

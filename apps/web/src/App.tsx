@@ -41,6 +41,9 @@ const OnboardingPage = lazy(() =>
 const ApiKeysPage = lazy(() =>
   import('@/pages/ApiKeysPage').then((m) => ({ default: m.ApiKeysPage })),
 );
+const ProcessamentoPage = lazy(() =>
+  import('@/pages/ProcessamentoPage').then((m) => ({ default: m.ProcessamentoPage })),
+);
 
 function PageLoader() {
   return (
@@ -145,6 +148,14 @@ export default function App(): React.ReactNode {
             element={
               <Suspense fallback={<PageLoader />}>
                 <ApiKeysPage />
+              </Suspense>
+            }
+          />
+          <Route
+            path="processamento"
+            element={
+              <Suspense fallback={<PageLoader />}>
+                <ProcessamentoPage />
               </Suspense>
             }
           />

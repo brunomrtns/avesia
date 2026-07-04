@@ -160,15 +160,19 @@ export interface GapAnalysis {
 export interface SessionRecording {
   id: string;
   sessionId: string;
-  fileName: string;
-  mimeType: string;
-  sizeBytes: number;
-  durationSeconds?: number;
-  status: 'UPLOADED' | 'PROCESSING' | 'TRANSCRIBED' | 'FAILED';
-  transcriptionProgress?: number;
-  errorMessage?: string;
+  storageKey: string;
+  format: string;
+  sizeBytes: string | null;
+  durationSeconds?: number | null;
+  status: 'UPLOADED' | 'PROCESSING' | 'COMPLETED' | 'FAILED';
+  errorMessage?: string | null;
   createdAt: string;
   updatedAt: string;
+  session?: {
+    id: string;
+    scheduledAt: string;
+    patient: { id: string; fullName: string };
+  };
 }
 
 // ── Consent types ───────────────────────────────────────────────────────────
@@ -609,6 +613,17 @@ export const api = {
       request<SessionRecording>(`/sessions/${id}/audio/${recordingId}`),
     deleteAudio: (id: string, recordingId: string): Promise<void> =>
       request<void>(`/sessions/${id}/audio/${recordingId}`, { method: 'DELETE' }),
+  },
+
+  recordings: {
+    list: (params?: { status?: string; page?: number; pageSize?: number }): Promise<{ items: SessionRecording[]; page: number; pageSize: number; total: number }> => {
+      const q = new URLSearchParams();
+      if (params?.status) q.set('status', params.status);
+      if (params?.page) q.set('page', String(params.page));
+      if (params?.pageSize) q.set('pageSize', String(params.pageSize));
+      const qs = q.toString();
+      return request<{ items: SessionRecording[]; page: number; pageSize: number; total: number }>(`/recordings${qs ? `?${qs}` : ''}`);
+    },
   },
 
   organization: {
