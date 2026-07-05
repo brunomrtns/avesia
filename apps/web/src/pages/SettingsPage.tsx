@@ -6,7 +6,7 @@ import { toast } from 'sonner';
 import { useNavigate, useParams } from 'react-router-dom';
 import { Loader2, Building2, Save } from 'lucide-react';
 
-import { AuthContext } from '@/lib/auth-context';
+import { useAuthStore } from '@/stores/auth-store';
 import { api } from '@/lib/api-client';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader } from '@/components/ui/card';
@@ -14,7 +14,6 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Skeleton } from '@/components/ui/skeleton';
 import { cn } from '@/lib/utils';
-import { useContext } from 'react';
 
 const settingsFormSchema = z.object({
   name: z.string().min(1, 'Nome é obrigatório').max(200),
@@ -27,7 +26,7 @@ export function SettingsPage(): React.ReactNode {
   const queryClient = useQueryClient();
   const navigate = useNavigate();
   const { orgSlug } = useParams<{ orgSlug: string }>();
-  const auth = useContext(AuthContext);
+  const updateOrgSlug = useAuthStore((s) => s.updateOrgSlug);
 
   const orgQuery = useQuery({
     queryKey: ['organization'],
@@ -40,8 +39,8 @@ export function SettingsPage(): React.ReactNode {
       void queryClient.invalidateQueries({ queryKey: ['organization'] });
       const newSlug = data.slug as string;
       const newName = data.name as string;
-      // Update auth context with new slug/name
-      auth?.updateOrgSlug(newSlug, newName);
+      // Update auth store with new slug/name
+      updateOrgSlug(newSlug, newName);
       toast.success('Organização atualizada com sucesso');
       // If slug changed, navigate to the new URL
       if (newSlug && newSlug !== orgSlug) {

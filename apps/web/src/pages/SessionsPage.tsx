@@ -1,4 +1,4 @@
-import { useState, useContext, useEffect } from 'react';
+import { useState, useEffect } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useForm, Controller } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
@@ -7,7 +7,9 @@ import { toast } from 'sonner';
 import { format } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
 import { Link, useParams, useSearchParams } from 'react-router-dom';
-import { AuthContext } from '@/lib/auth-context';
+import { useAuthStore } from '@/stores/auth-store';
+import { usePagination } from '@/hooks/use-pagination';
+import { useListFilters } from '@/hooks/use-list-filters';
 import {
   Plus,
   Loader2,
@@ -89,25 +91,21 @@ const STATUS_VARIANTS: Record<string, 'default' | 'warning' | 'success' | 'destr
 export function SessionsPage(): React.ReactNode {
   const { orgSlug } = useParams<{ orgSlug: string }>();
   const queryClient = useQueryClient();
-  const [page, setPage] = useState(1);
-  const [statusFilter, setStatusFilter] = useState<string>('');
-  const [fromDate, setFromDate] = useState('');
-  const [toDate, setToDate] = useState('');
+  const { page, pageSize, prevPage, nextPage, resetPage, totalPages } = usePagination();
+  const { filters, setFilter, activeFilters } = useListFilters<{ status: string; from: string; to: string }>();
   const [searchParams] = useSearchParams();
 
   // Open dialog automatically if ?new=true (initial state, no effect needed)
   const [dialogOpen, setDialogOpen] = useState(() => searchParams.get('new') === 'true');
   const [briefingSession, setBriefingSession] = useState<{ id: string; patientName: string } | null>(null);
 
-  const pageSize = 20;
-
   const sessionsQuery = useQuery({
-    queryKey: ['sessions', { page, status: statusFilter, from: fromDate, to: toDate }],
+    queryKey: ['sessions', { page, status: filters.status, from: filters.from, to: filters.to }],
     queryFn: () => {
       const q: any = { page, pageSize };
-      if (statusFilter) q.status = statusFilter;
-      if (fromDate) q.from = `${fromDate}T00:00:00.000Z`;
-      if (toDate) q.to = `${toDate}T23:59:59.999Z`;
+      if (activeFilters.status) q.status = activeFilters.status;
+      if (activeFilters.from) q.from = `${activeFilters.from}T00:00:00.000Z`;
+      if (activeFilters.to) q.to = `${activeFilters.to}T23:59:59.999Z`;
       return api.sessions.list(q);
     },
   });
@@ -147,7 +145,7 @@ export function SessionsPage(): React.ReactNode {
 
   const items = sessionsQuery.data?.items ?? [];
   const total = sessionsQuery.data?.total ?? 0;
-  const totalPages = Math.ceil(total / pageSize);
+  const pages = totalPages(total);
   const patients = (patientsQuery.data?.items ?? []) as any[];
   const professionals = (professionalsQuery.data?.items ?? []) as any[];
 
@@ -165,10 +163,10 @@ export function SessionsPage(): React.ReactNode {
       <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
         <div className="flex flex-wrap gap-3">
           <Select
-            value={statusFilter || 'all'}
+            value={filters.status || 'all'}
             onValueChange={(v) => {
-              setStatusFilter(v === 'all' ? '' : v);
-              setPage(1);
+              setFilter('status', v === 'all' ? '' : v);
+              resetPage();
             }}
           >
             <SelectTrigger className="w-[160px]">
@@ -186,10 +184,10 @@ export function SessionsPage(): React.ReactNode {
           <Input
             type="date"
             className="w-[150px]"
-            value={fromDate}
+            value={filters.from}
             onChange={(e) => {
-              setFromDate(e.target.value);
-              setPage(1);
+              setFilter('from', e.target.value);
+              resetPage();
             }}
             placeholder="De"
           />
@@ -197,10 +195,10 @@ export function SessionsPage(): React.ReactNode {
           <Input
             type="date"
             className="w-[150px]"
-            value={toDate}
+            value={filters.to}
             onChange={(e) => {
-              setToDate(e.target.value);
-              setPage(1);
+              setFilter('to', e.target.value);
+              resetPage();
             }}
             placeholder="Até"
           />
@@ -315,7 +313,7 @@ export function SessionsPage(): React.ReactNode {
         )}
 
         {/* Pagination */}
-        {totalPages > 1 && (
+        {pages > 1 && (
           <div className="flex items-center justify-between border-t border-border px-6 py-3">
             <p className="text-sm text-foreground-muted">
               {total} sessão{total !== 1 ? 'ões' : ''} encontrada{total !== 1 ? 's' : ''}
@@ -325,18 +323,18 @@ export function SessionsPage(): React.ReactNode {
                 variant="outline"
                 size="icon-sm"
                 disabled={page <= 1}
-                onClick={() => setPage((p) => Math.max(1, p - 1))}
+                onClick={prevPage}
               >
                 <ChevronLeft className="h-4 w-4" />
               </Button>
               <span className="text-sm text-foreground-muted">
-                {page} / {totalPages}
+                {page} / {pages}
               </span>
               <Button
                 variant="outline"
                 size="icon-sm"
-                disabled={page >= totalPages}
-                onClick={() => setPage((p) => p + 1)}
+                disabled={page >= pages}
+                onClick={nextPage}
               >
                 <ChevronRight className="h-4 w-4" />
               </Button>
@@ -368,9 +366,9 @@ interface SessionDialogProps {
 }
 
 function SessionDialog({ patients, professionals, onSubmit, loading }: SessionDialogProps): React.ReactNode {
-  const auth = useContext(AuthContext);
-  const currentProfessionalId = (auth?.user as any)?.professional?.id ?? '';
-  const isProfessional = (auth?.user as any)?.role === 'PROFESSIONAL';
+  const user = useAuthStore((s) => s.user);
+  const currentProfessionalId = (user as any)?.professional?.id ?? '';
+  const isProfessional = (user as any)?.role === 'PROFESSIONAL';
 
   const {
     register,

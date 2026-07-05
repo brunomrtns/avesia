@@ -1,5 +1,7 @@
 import { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { usePagination } from '@/hooks/use-pagination';
+import { useListFilters } from '@/hooks/use-list-filters';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
@@ -51,21 +53,18 @@ type PatientFormValues = z.infer<typeof patientFormSchema>;
 
 export function PatientsPage(): React.ReactNode {
   const queryClient = useQueryClient();
-  const [page, setPage] = useState(1);
-  const [search, setSearch] = useState('');
-  const [statusFilter, setStatusFilter] = useState<string>('');
+  const { page, pageSize, prevPage, nextPage, resetPage, totalPages } = usePagination();
+  const { filters, setFilter, activeFilters } = useListFilters<{ search: string; status: string }>();
   const [dialogOpen, setDialogOpen] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [importOpen, setImportOpen] = useState(false);
 
-  const pageSize = 20;
-
   const patientsQuery = useQuery({
-    queryKey: ['patients', { page, search, status: statusFilter }],
+    queryKey: ['patients', { page, search: filters.search, status: filters.status }],
     queryFn: () => {
       const q: Record<string, string | number> = { page, pageSize };
-      if (search) q.search = search;
-      if (statusFilter) q.status = statusFilter;
+      if (activeFilters.search) q.search = activeFilters.search;
+      if (activeFilters.status) q.status = activeFilters.status;
       return api.patients.list(q as any);
     },
   });
@@ -126,7 +125,7 @@ export function PatientsPage(): React.ReactNode {
 
   const items = patientsQuery.data?.items ?? [];
   const total = patientsQuery.data?.total ?? 0;
-  const totalPages = Math.ceil(total / pageSize);
+  const pages = totalPages(total);
 
   return (
     <div className="space-y-6">
@@ -147,19 +146,19 @@ export function PatientsPage(): React.ReactNode {
               type="text"
               placeholder="Buscar paciente..."
               className="pl-9"
-              value={search}
+              value={filters.search}
               onChange={(e) => {
-                setSearch(e.target.value);
-                setPage(1);
+                setFilter('search', e.target.value);
+                resetPage();
               }}
             />
           </div>
 
           <Select
-            value={statusFilter || 'all'}
+            value={filters.status || 'all'}
             onValueChange={(v) => {
-              setStatusFilter(v === 'all' ? '' : v);
-              setPage(1);
+              setFilter('status', v === 'all' ? '' : v);
+              resetPage();
             }}
           >
             <SelectTrigger className="w-[160px]">
@@ -271,7 +270,7 @@ export function PatientsPage(): React.ReactNode {
         )}
 
         {/* Pagination */}
-        {totalPages > 1 && (
+        {pages > 1 && (
           <div className="flex items-center justify-between border-t border-border px-6 py-3">
             <p className="text-sm text-foreground-muted">
               {total} paciente{total !== 1 ? 's' : ''} encontrado{total !== 1 ? 's' : ''}
@@ -281,18 +280,18 @@ export function PatientsPage(): React.ReactNode {
                 variant="outline"
                 size="icon-sm"
                 disabled={page <= 1}
-                onClick={() => setPage((p) => Math.max(1, p - 1))}
+                onClick={prevPage}
               >
                 <ChevronLeft className="h-4 w-4" />
               </Button>
               <span className="text-sm text-foreground-muted">
-                {page} / {totalPages}
+                {page} / {pages}
               </span>
               <Button
                 variant="outline"
                 size="icon-sm"
-                disabled={page >= totalPages}
-                onClick={() => setPage((p) => p + 1)}
+                disabled={page >= pages}
+                onClick={nextPage}
               >
                 <ChevronRight className="h-4 w-4" />
               </Button>

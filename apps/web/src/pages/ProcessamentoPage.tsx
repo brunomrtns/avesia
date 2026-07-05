@@ -1,4 +1,4 @@
-import { useCallback, useRef, useState, useContext } from 'react';
+import { useCallback, useRef, useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useForm, Controller } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
@@ -21,7 +21,7 @@ import {
 
 import { api } from '@/lib/api-client';
 import type { CreateSessionRequest } from '@avesia/types';
-import { AuthContext } from '@/lib/auth-context';
+import { useAuthStore } from '@/stores/auth-store';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import {
@@ -304,10 +304,10 @@ function NewProcessingDialog({
   onCreated,
 }: NewProcessingDialogProps): React.ReactNode {
   const queryClient = useQueryClient();
-  const auth = useContext(AuthContext);
-  const isProfessional = (auth?.user as Record<string, unknown> | null)?.role === 'PROFESSIONAL';
+  const user = useAuthStore((s) => s.user);
+  const isProfessional = (user as Record<string, unknown> | null)?.role === 'PROFESSIONAL';
   const currentProfessionalId =
-    ((auth?.user as Record<string, unknown> | null)?.professional as Record<string, unknown> | undefined)?.id as string ?? '';
+    ((user as Record<string, unknown> | null)?.professional as Record<string, unknown> | undefined)?.id as string ?? '';
   const [step, setStep] = useState<Step>('session');
   const [createdSessionId, setCreatedSessionId] = useState<string | null>(null);
   const [pendingFiles, setPendingFiles] = useState<File[]>([]);

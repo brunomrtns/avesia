@@ -21,9 +21,7 @@ import {
 } from 'lucide-react';
 import {
   useCallback,
-  useContext,
   useEffect,
-  useState,
   type ReactNode,
 } from 'react';
 import { NavLink, Outlet, useLocation, useNavigate, useParams } from 'react-router-dom';
@@ -42,8 +40,9 @@ import { Button } from '@/components/ui/button';
 import { Separator } from '@/components/ui/separator';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 import { NeuralIndicator } from '@/components/ui/neural-indicator';
-import { AuthContext } from '@/lib/auth-context';
-import { useTheme } from '@/lib/theme-context';
+import { useAuthStore } from '@/stores/auth-store';
+import { useThemeStore } from '@/stores/theme-store';
+import { useUIStore } from '@/stores/ui-store';
 import { BrandLogo, BRAND } from '@/components/branding/BrandLogo';
 import { TermsAcceptanceDialog } from '@/components/terms/TermsAcceptanceDialog';
 import { cn } from '@/lib/utils';
@@ -88,17 +87,24 @@ const PAGE_TITLES: Record<string, string> = {
 // Change brand name, tagline, or icon there and it reflects everywhere.
 
 export function Layout(): ReactNode {
-  const auth = useContext(AuthContext);
+  const user = useAuthStore((s) => s.user);
+  const pendingTerms = useAuthStore((s) => s.pendingTerms);
+  const logout = useAuthStore((s) => s.logout);
+  const clearPendingTerms = useAuthStore((s) => s.clearPendingTerms);
+
+  const theme = useThemeStore((s) => s.theme);
+  const toggleTheme = useThemeStore((s) => s.toggleTheme);
+
+  const sidebarOpen = useUIStore((s) => s.sidebarOpen);
+  const collapsed = useUIStore((s) => s.collapsed);
+  const commandOpen = useUIStore((s) => s.commandOpen);
+  const setSidebarOpen = useUIStore((s) => s.setSidebarOpen);
+  const setCollapsed = useUIStore((s) => s.setCollapsed);
+  const setCommandOpen = useUIStore((s) => s.setCommandOpen);
+
   const location = useLocation();
   const navigate = useNavigate();
   const { orgSlug } = useParams<{ orgSlug: string }>();
-  const { theme, toggleTheme } = useTheme();
-
-  const [sidebarOpen, setSidebarOpen] = useState(false);
-  const [collapsed, setCollapsed] = useState(false);
-  const [commandOpen, setCommandOpen] = useState(false);
-
-  if (!auth) throw new Error('Layout must be used within AuthProvider');
 
   // Build full path for a nav item: /:orgSlug/:path
   const buildPath = (path: string): string => `/${orgSlug}${path ? `/${path}` : ''}`;
@@ -110,7 +116,7 @@ export function Layout(): ReactNode {
   // Filter nav items by role — AI Providers and API Keys only for OWNER/ADMIN
   const visibleNavItems = NAV_ITEMS.filter((item) => {
     if (item.path === 'ai-providers' || item.path === 'api-keys') {
-      return auth.user?.role === 'OWNER' || auth.user?.role === 'ADMIN';
+      return user?.role === 'OWNER' || user?.role === 'ADMIN';
     }
     return true;
   });
@@ -119,12 +125,12 @@ export function Layout(): ReactNode {
     const handler = (e: KeyboardEvent) => {
       if ((e.metaKey || e.ctrlKey) && e.key === 'k') {
         e.preventDefault();
-        setCommandOpen((prev) => !prev);
+        setCommandOpen(!useUIStore.getState().commandOpen);
       }
     };
     document.addEventListener('keydown', handler);
     return () => document.removeEventListener('keydown', handler);
-  }, []);
+  }, [setCommandOpen]);
 
   const handleNavigate = useCallback(
     (path: string) => {
@@ -132,7 +138,7 @@ export function Layout(): ReactNode {
       setCommandOpen(false);
       setSidebarOpen(false);
     },
-    [navigate, orgSlug],
+    [navigate, orgSlug, setCommandOpen, setSidebarOpen],
   );
 
   return (
@@ -233,7 +239,7 @@ export function Layout(): ReactNode {
           {/* Collapse toggle */}
           <div className="hidden px-2 lg:block">
             <button
-              onClick={() => setCollapsed((prev) => !prev)}
+              onClick={() => setCollapsed(!collapsed)}
               className="flex w-full items-center gap-3 rounded-md px-3 py-2 text-sm text-foreground-muted transition-colors hover:bg-surface-elevated hover:text-foreground"
               aria-label={collapsed ? 'Expandir menu' : 'Recolher menu'}
             >
@@ -249,22 +255,22 @@ export function Layout(): ReactNode {
             <div className={cn('flex items-center gap-3', collapsed && 'justify-center')}>
               <Avatar className="h-8 w-8">
                 <AvatarFallback className="bg-primary/10 text-primary text-xs font-medium">
-                  {auth.user?.email?.charAt(0).toUpperCase() ?? 'U'}
+                  {user?.email?.charAt(0).toUpperCase() ?? 'U'}
                 </AvatarFallback>
               </Avatar>
               {!collapsed && (
                 <div className="flex-1 overflow-hidden">
                   <p className="truncate text-xs font-medium text-foreground">
-                    {auth.user?.email ?? 'Usuário'}
+                    {user?.email ?? 'Usuário'}
                   </p>
                   <p className="truncate text-[10px] text-foreground-muted uppercase tracking-wider">
-                    {auth.user?.role ?? 'PROFESSIONAL'}
+                    {user?.role ?? 'PROFESSIONAL'}
                   </p>
                 </div>
               )}
               {!collapsed && (
                 <button
-                  onClick={() => { auth.logout(); navigate('/'); }}
+                  onClick={() => { logout(); navigate('/'); }}
                   className="rounded-md p-1.5 text-foreground-muted transition-colors hover:bg-destructive/10 hover:text-destructive"
                   aria-label="Sair"
                   title="Sair"
@@ -330,7 +336,7 @@ export function Layout(): ReactNode {
 
               <Avatar className="h-7 w-7 lg:hidden">
                 <AvatarFallback className="bg-primary/10 text-primary text-[10px]">
-                  {auth.user?.email?.charAt(0).toUpperCase() ?? 'U'}
+                  {user?.email?.charAt(0).toUpperCase() ?? 'U'}
                 </AvatarFallback>
               </Avatar>
             </div>
@@ -378,7 +384,7 @@ export function Layout(): ReactNode {
                 <HelpCircle className="h-4 w-4" />
                 <span>Central de Ajuda</span>
               </CommandItem>
-              <CommandItem onSelect={() => { auth.logout(); navigate('/'); setCommandOpen(false); }}>
+              <CommandItem onSelect={() => { logout(); navigate('/'); setCommandOpen(false); }}>
                 <LogOut className="h-4 w-4" />
                 <span>Sair</span>
               </CommandItem>
@@ -387,10 +393,10 @@ export function Layout(): ReactNode {
         </CommandDialog>
 
         {/* Terms acceptance blocking dialog */}
-        {auth.pendingTerms.length > 0 && (
+        {pendingTerms.length > 0 && (
           <TermsAcceptanceDialog
-            pendingTerms={auth.pendingTerms}
-            onAccepted={auth.clearPendingTerms}
+            pendingTerms={pendingTerms}
+            onAccepted={clearPendingTerms}
           />
         )}
       </div>

@@ -1,4 +1,4 @@
-import { useContext, useEffect } from 'react';
+import { useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { motion } from 'motion/react';
 import {
@@ -16,7 +16,7 @@ import {
   Lock,
 } from 'lucide-react';
 
-import { AuthContext } from '@/lib/auth-context';
+import { useAuthStore } from '@/stores/auth-store';
 import { BrandLogo, BRAND } from '@/components/branding/BrandLogo';
 import { Button } from '@/components/ui/button';
 import { NeuralIndicator } from '@/components/ui/neural-indicator';
@@ -80,15 +80,17 @@ const STEPS = [
 ];
 
 export function LandingPage(): React.ReactNode {
-  const auth = useContext(AuthContext);
+  const isLoading = useAuthStore((s) => s.isLoading);
+  const isAuthenticated = useAuthStore((s) => s.isAuthenticated);
+  const orgSlug = useAuthStore((s) => s.orgSlug);
   const navigate = useNavigate();
 
   // If already authenticated, redirect to org dashboard
   useEffect(() => {
-    if (!auth?.isLoading && auth?.isAuthenticated && auth.orgSlug) {
-      navigate(`/${auth.orgSlug}`, { replace: true });
+    if (!isLoading && isAuthenticated && orgSlug) {
+      navigate(`/${orgSlug}`, { replace: true });
     }
-  }, [auth?.isLoading, auth?.isAuthenticated, auth?.orgSlug, navigate]);
+  }, [isLoading, isAuthenticated, orgSlug, navigate]);
 
   return (
     <div className="min-h-screen bg-background">

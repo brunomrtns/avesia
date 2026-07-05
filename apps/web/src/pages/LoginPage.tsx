@@ -1,4 +1,4 @@
-import { useContext, useState } from 'react';
+import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
@@ -7,7 +7,7 @@ import { toast } from 'sonner';
 import { motion } from 'motion/react';
 import { Eye, EyeOff, Loader2, Sparkles } from 'lucide-react';
 
-import { AuthContext } from '@/lib/auth-context';
+import { useAuthStore } from '@/stores/auth-store';
 import { api } from '@/lib/api-client';
 import { BrandLogo, BRAND } from '@/components/branding/BrandLogo';
 import { Button } from '@/components/ui/button';
@@ -23,11 +23,9 @@ const loginFormSchema = z.object({
 type LoginFormValues = z.infer<typeof loginFormSchema>;
 
 export function LoginPage(): React.ReactNode {
-  const auth = useContext(AuthContext);
+  const login = useAuthStore((s) => s.login);
   const navigate = useNavigate();
   const [showPassword, setShowPassword] = useState(false);
-
-  if (!auth) throw new Error('LoginPage must be used within AuthProvider');
 
   const {
     register,
@@ -40,9 +38,9 @@ export function LoginPage(): React.ReactNode {
 
   const onSubmit = async (values: LoginFormValues): Promise<void> => {
     try {
-      await auth.login(values.email, values.password);
+      await login(values.email, values.password);
       // Redirect to the org-scoped dashboard
-      const slug = auth.orgSlug ?? (await api.auth.me()).organization?.slug;
+      const slug = useAuthStore.getState().orgSlug ?? (await api.auth.me()).organization?.slug;
       navigate(slug ? `/${slug}` : '/', { replace: true });
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Erro ao fazer login. Tente novamente.';

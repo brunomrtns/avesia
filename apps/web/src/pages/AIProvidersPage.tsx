@@ -17,8 +17,7 @@ import {
 } from 'lucide-react';
 
 import { api } from '@/lib/api-client';
-import { AuthContext } from '@/lib/auth-context';
-import { useContext } from 'react';
+import { useAuthStore } from '@/stores/auth-store';
 import { Navigate, useParams } from 'react-router-dom';
 
 import { Button } from '@/components/ui/button';
@@ -72,14 +71,14 @@ const PROVIDER_META: Record<string, { icon: typeof Cloud; label: string; color: 
 
 // ── Page ─────────────────────────────────────────────────────────────────────
 export function AIProvidersPage(): React.ReactNode {
-  const auth = useContext(AuthContext);
+  const user = useAuthStore((s) => s.user);
   const queryClient = useQueryClient();
   const [dialogOpen, setDialogOpen] = useState(false);
   const [editingProvider, setEditingProvider] = useState<AIProviderConfigDTO | null>(null);
   const [testingId, setTestingId] = useState<string | null>(null);
 
   // Admin/owner only
-  if (auth?.user && auth.user.role !== 'OWNER' && auth.user.role !== 'ADMIN') {
+  if (user && user.role !== 'OWNER' && user.role !== 'ADMIN') {
     const { orgSlug } = useParams<{ orgSlug: string }>();
     return <Navigate to={orgSlug ? `/${orgSlug}` : '/'} replace />;
   }
