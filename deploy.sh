@@ -149,6 +149,14 @@ if [[ "$MIGRATE_ONLY" -eq 1 ]]; then
   POSTGRES_USER=$(grep '^POSTGRES_USER=' "$SCRIPT_DIR/.env.prod" | cut -d= -f2-)
   POSTGRES_PASSWORD=$(grep '^POSTGRES_PASSWORD=' "$SCRIPT_DIR/.env.prod" | cut -d= -f2-)
   POSTGRES_DB=$(grep '^POSTGRES_DB=' "$SCRIPT_DIR/.env.prod" | cut -d= -f2-)
+  # Fix renamed migration directories (idempotent)
+  vps "docker run --rm --network avesia-net \
+    -e PGPASSWORD='${POSTGRES_PASSWORD}' \
+    avesia-postgres:latest \
+    psql -h avesia-postgres -U '${POSTGRES_USER}' -d '${POSTGRES_DB}' -c \"
+      UPDATE _prisma_migrations SET migration_name = '20260818000001_storage_key_nullable' WHERE migration_name = '20260705000001_storage_key_nullable';
+      UPDATE _prisma_migrations SET migration_name = '20260818000002_data_retention' WHERE migration_name = '20260705000002_data_retention';
+    \" 2>/dev/null || true"
   vps "docker run --rm --network avesia-net \
     -e DATABASE_URL='postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@avesia-postgres:5432/${POSTGRES_DB}?schema=public' \
     -v $VPS_PATH/apps/api/prisma:/app/apps/api/prisma:ro \
@@ -228,6 +236,16 @@ log "Step 5/7: Rodando Prisma migrations..."
 POSTGRES_USER=$(grep '^POSTGRES_USER=' "$SCRIPT_DIR/.env.prod" | cut -d= -f2-)
 POSTGRES_PASSWORD=$(grep '^POSTGRES_PASSWORD=' "$SCRIPT_DIR/.env.prod" | cut -d= -f2-)
 POSTGRES_DB=$(grep '^POSTGRES_DB=' "$SCRIPT_DIR/.env.prod" | cut -d= -f2-)
+
+# Fix renamed migration directories in _prisma_migrations (idempotent)
+vps "docker run --rm --network avesia-net \
+  -e PGPASSWORD='${POSTGRES_PASSWORD}' \
+  avesia-postgres:latest \
+  psql -h avesia-postgres -U '${POSTGRES_USER}' -d '${POSTGRES_DB}' -c \"
+    UPDATE _prisma_migrations SET migration_name = '20260818000001_storage_key_nullable' WHERE migration_name = '20260705000001_storage_key_nullable';
+    UPDATE _prisma_migrations SET migration_name = '20260818000002_data_retention' WHERE migration_name = '20260705000002_data_retention';
+  \" 2>/dev/null || true"
+
 vps "docker run --rm --network avesia-net \
   -e DATABASE_URL='postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@avesia-postgres:5432/${POSTGRES_DB}?schema=public' \
   -v $VPS_PATH/apps/api/prisma:/app/apps/api/prisma:ro \
