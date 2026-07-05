@@ -93,18 +93,10 @@ export function SessionsPage(): React.ReactNode {
   const [statusFilter, setStatusFilter] = useState<string>('');
   const [fromDate, setFromDate] = useState('');
   const [toDate, setToDate] = useState('');
-  const [dialogOpen, setDialogOpen] = useState(false);
-  const [searchParams, setSearchParams] = useSearchParams();
+  const [searchParams] = useSearchParams();
 
-  // Open dialog automatically if ?new=true
-  useEffect(() => {
-    if (searchParams.get('new') === 'true') {
-      setDialogOpen(true);
-      // Clean the URL so it doesn't re-open on refresh
-      searchParams.delete('new');
-      setSearchParams(searchParams, { replace: true });
-    }
-  }, [searchParams, setSearchParams]);
+  // Open dialog automatically if ?new=true (initial state, no effect needed)
+  const [dialogOpen, setDialogOpen] = useState(() => searchParams.get('new') === 'true');
   const [briefingSession, setBriefingSession] = useState<{ id: string; patientName: string } | null>(null);
 
   const pageSize = 20;

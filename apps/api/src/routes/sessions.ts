@@ -924,7 +924,115 @@ Exemplo de formato:
       }
     }
 
-    return { success: true, updatedCount };
+    // Persist diarization as an AIAnalysis for token tracking
+    await app.prisma.aIAnalysis.create({
+      data: {
+        id: generateId(),
+        organizationId: request.organizationId,
+        sessionId: id,
+        transcriptId: transcript.id,
+        type: 'DIARIZATION',
+        provider: result.provider,
+        model: result.model,
+        input: { segmentCount: segments.length } as any,
+        output: { updatedCount } as any,
+        tokensUsed: { total: result.tokensUsed } as any,
+        status: 'COMPLETED',
+        durationMs: result.latencyMs,
+      },
+    });
+
+    return { success: true, updatedCount, tokensUsed: result.tokensUsed };
+  });
+
+  // ── GET /sessions/:id/tokens ─────────────────────────────────────────
+  // Aggregate all token usage for a session, broken down by source.
+  app.get('/sessions/:id/tokens', async (request: FastifyRequest, _reply) => {
+    const { id } = request.params as { id: string };
+
+    // Verify session belongs to org
+    const session = await app.prisma.clinicalSession.findFirst({
+      where: { id, organizationId: request.organizationId },
+      select: { id: true },
+    });
+    if (!session) {
+      throw new NotFoundError('Sessão não encontrada');
+    }
+
+    // 1. AI Analyses (briefing, SOAP, summary, clinical analysis, diarization)
+    const aiAnalyses = await app.prisma.aIAnalysis.findMany({
+      where: { sessionId: id, organizationId: request.organizationId },
+      select: { type: true, tokensUsed: true, provider: true, model: true, createdAt: true },
+      orderBy: { createdAt: 'asc' },
+    });
+
+    const aiBreakdown: Record<string, number> = {};
+    const providerBreakdown: Record<string, number> = {};
+    const entries: Array<{ type: string; tokens: number; provider: string; model: string; createdAt: string }> = [];
+
+    for (const a of aiAnalyses) {
+      const t = a.tokensUsed as any;
+      const tokens = (t && typeof t === 'object' && typeof t.total === 'number')
+        ? t.total
+        : (typeof t === 'number' ? t : 0);
+
+      if (tokens > 0) {
+        aiBreakdown[a.type] = (aiBreakdown[a.type] ?? 0) + tokens;
+        providerBreakdown[a.provider] = (providerBreakdown[a.provider] ?? 0) + tokens;
+        entries.push({ type: a.type, tokens, provider: a.provider, model: a.model, createdAt: a.createdAt.toISOString() });
+      }
+    }
+
+    // 2. Copilot analyses (real-time insights)
+    const copilotAnalyses = await app.prisma.sessionCopilotAnalysis.findMany({
+      where: { sessionId: id, organizationId: request.organizationId },
+      select: { tokensUsed: true, durationMs: true, createdAt: true },
+      orderBy: { createdAt: 'asc' },
+    });
+
+    let copilotTokens = 0;
+    let copilotCount = 0;
+    for (const c of copilotAnalyses) {
+      copilotTokens += c.tokensUsed;
+      if (c.tokensUsed > 0) copilotCount++;
+      entries.push({ type: 'COPILOT', tokens: c.tokensUsed, provider: 'copilot', model: 'realtime', createdAt: c.createdAt.toISOString() });
+    }
+
+    // 3. Transcripts (token count from transcription)
+    const transcripts = await app.prisma.transcript.findMany({
+      where: { sessionId: id, organizationId: request.organizationId },
+      select: { tokenCount: true, provider: true },
+    });
+
+    let transcriptTokens = 0;
+    for (const t of transcripts) {
+      if (t.tokenCount) {
+        transcriptTokens += t.tokenCount;
+        if (t.provider) {
+          providerBreakdown[t.provider] = (providerBreakdown[t.provider] ?? 0) + t.tokenCount;
+        }
+        entries.push({ type: 'TRANSCRIPTION', tokens: t.tokenCount, provider: t.provider ?? 'unknown', model: 'whisper', createdAt: new Date().toISOString() });
+      }
+    }
+
+    const total = Object.values(aiBreakdown).reduce((a, b) => a + b, 0) + copilotTokens + transcriptTokens;
+
+    return {
+      total,
+      byType: {
+        briefing: aiBreakdown['BRIEFING'] ?? 0,
+        soap: aiBreakdown['SOAP'] ?? 0,
+        summary: aiBreakdown['SUMMARY'] ?? 0,
+        clinicalAnalysis: aiBreakdown['CLINICAL_ANALYSIS'] ?? 0,
+        insights: aiBreakdown['INSIGHTS'] ?? 0,
+        diarization: aiBreakdown['DIARIZATION'] ?? 0,
+        copilot: copilotTokens,
+        transcription: transcriptTokens,
+      },
+      byProvider: providerBreakdown,
+      copilotCount,
+      entries,
+    };
   });
 };
 

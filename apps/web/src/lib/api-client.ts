@@ -138,6 +138,33 @@ export interface PostSessionAnalysisResponse {
   generatedAt: string;
 }
 
+// ── Session token usage ────────────────────────────────────────────────────
+
+export interface SessionTokenEntry {
+  type: string;
+  tokens: number;
+  provider: string;
+  model: string;
+  createdAt: string;
+}
+
+export interface SessionTokenUsage {
+  total: number;
+  byType: {
+    briefing: number;
+    soap: number;
+    summary: number;
+    clinicalAnalysis: number;
+    insights: number;
+    diarization: number;
+    copilot: number;
+    transcription: number;
+  };
+  byProvider: Record<string, number>;
+  copilotCount: number;
+  entries: SessionTokenEntry[];
+}
+
 // ── Dashboard stats ─────────────────────────────────────────────────────────
 
 // ── Gap analysis types ──────────────────────────────────────────────────────
@@ -636,8 +663,8 @@ export const api = {
       request<Record<string, unknown>[]>(`/sessions/${id}/transcribe-chunk`, { method: 'POST' }),
     getInsights: (id: string): Promise<SessionInsightsResponse> =>
       request<SessionInsightsResponse>(`/sessions/${id}/insights`, { method: 'POST' }),
-    diarize: (id: string): Promise<{ success: boolean; updatedCount: number }> =>
-      request<{ success: boolean; updatedCount: number }>(`/sessions/${id}/diarize`, { method: 'POST' }),
+    diarize: (id: string): Promise<{ success: boolean; updatedCount: number; tokensUsed?: number }> =>
+      request<{ success: boolean; updatedCount: number; tokensUsed?: number }>(`/sessions/${id}/diarize`, { method: 'POST' }),
     // Copilot
     getCopilotSettings: (id: string): Promise<CopilotSettings> =>
       request<CopilotSettings>(`/sessions/${id}/copilot/settings`),
@@ -668,6 +695,8 @@ export const api = {
       request<void>(`/sessions/${id}/audio/${recordingId}`, { method: 'DELETE' }),
     listAnalyses: (id: string): Promise<{ items: unknown[] }> =>
       request<{ items: unknown[] }>(`/sessions/${id}/analyses`),
+    getTokenUsage: (id: string): Promise<SessionTokenUsage> =>
+      request<SessionTokenUsage>(`/sessions/${id}/tokens`),
   },
 
   recordings: {

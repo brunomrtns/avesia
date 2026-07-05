@@ -9,7 +9,7 @@
 // ============================================================================
 
 import { AnimatePresence, motion } from 'motion/react';
-import { Settings, Sparkles, Trash2 } from 'lucide-react';
+import { Settings, Sparkles, Trash2, Coins } from 'lucide-react';
 import { useState, useEffect, useCallback } from 'react';
 
 import { Button } from '@/components/ui/button';
@@ -73,6 +73,7 @@ export function InsightsPanel({ sessionId, hasSegments, onGenerate }: InsightsPa
   } = useSessionStore();
 
   const [showLegacyInsights, setShowLegacyInsights] = useState(false);
+  const [copilotTokens, setCopilotTokens] = useState(0);
 
   useEffect(() => {
     if (!sessionId) return;
@@ -90,6 +91,9 @@ export function InsightsPanel({ sessionId, hasSegments, onGenerate }: InsightsPa
         conceptIds: event.data.conceptIds,
         community: event.data.community,
       });
+      if (event.data.tokensUsed > 0) {
+        setCopilotTokens((prev) => prev + event.data.tokensUsed);
+      }
     },
     [addCopilotItems],
   );
@@ -170,6 +174,15 @@ export function InsightsPanel({ sessionId, hasSegments, onGenerate }: InsightsPa
           </div>
 
           <div className="flex items-center gap-1">
+            {copilotTokens > 0 && (
+              <span
+                className="flex items-center gap-1 rounded-md px-1.5 py-1 text-[11px] text-foreground-muted"
+                title="Tokens gastos pelo copilot nesta sessão"
+              >
+                <Coins className="h-3 w-3 text-primary/70" />
+                <span className="tabular-nums">{copilotTokens.toLocaleString('pt-BR')}</span>
+              </span>
+            )}
             {hasCopilotItems && (
               <Button
                 variant="ghost"

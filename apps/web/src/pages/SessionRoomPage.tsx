@@ -15,6 +15,7 @@ import { PostSessionAnalysisDialog } from '@/components/session-room/PostSession
 import { RecordingControls } from '@/components/session-room/RecordingControls';
 import { ResizableSplit } from '@/components/session-room/ResizableSplit';
 import { SOAPNoteDialog } from '@/components/session-room/SOAPNoteDialog';
+import { TokenUsagePanel } from '@/components/session-room/TokenUsagePanel';
 import { TranscriptPanel } from '@/components/session-room/TranscriptPanel';
 import { useSessionStore } from '@/stores/session-store';
 import type { ClinicalSession } from '@avesia/types';
@@ -113,7 +114,9 @@ export function SessionRoomPage(): React.ReactNode {
     mutationFn: () => api.sessions.diarize(id!),
     onSuccess: (data) => {
       void queryClient.invalidateQueries({ queryKey: ['session', id] });
-      toast.success(`Diarização concluída. ${data.updatedCount} falas corrigidas.`);
+      void queryClient.invalidateQueries({ queryKey: ['session-tokens', id] });
+      const tokenInfo = data.tokensUsed ? ` • ${data.tokensUsed} tokens` : '';
+      toast.success(`Diarização concluída. ${data.updatedCount} falas corrigidas${tokenInfo}.`);
     },
     onError: (err) => toast.error(err instanceof Error ? err.message : 'Falha na diarização'),
   });
@@ -126,6 +129,7 @@ export function SessionRoomPage(): React.ReactNode {
       store.setInsightsSources(data.sources ?? []);
       store.setInsightsCommunity(data.community ?? null);
       store.setIsGeneratingInsights(false);
+      void queryClient.invalidateQueries({ queryKey: ['session-tokens', id] });
       toast.success('Parecer atualizado');
     },
     onError: (err) => {
@@ -413,6 +417,7 @@ export function SessionRoomPage(): React.ReactNode {
 
         {/* AI action buttons — visible when there's a transcript or session is scheduled */}
         <div className="flex items-center gap-2">
+          <TokenUsagePanel sessionId={session.id} />
           {session.status === 'SCHEDULED' && (
             <Button
               variant="outline"
