@@ -215,13 +215,35 @@ if [[ "$MIGRATE_ONLY" -eq 1 ]]; then
   POSTGRES_USER=$(grep '^POSTGRES_USER=' "$SCRIPT_DIR/.env.prod" | cut -d= -f2-)
   POSTGRES_PASSWORD=$(grep '^POSTGRES_PASSWORD=' "$SCRIPT_DIR/.env.prod" | cut -d= -f2-)
   POSTGRES_DB=$(grep '^POSTGRES_DB=' "$SCRIPT_DIR/.env.prod" | cut -d= -f2-)
-  # Fix renamed migration directories (idempotent)
+  # Fix renamed migration directories + mark already-applied migrations (idempotent)
   vps "docker run --rm --network avesia-net \
     -e PGPASSWORD='${POSTGRES_PASSWORD}' \
     avesia-postgres:latest \
     psql -h avesia-postgres -U '${POSTGRES_USER}' -d '${POSTGRES_DB}' -c \"
+      -- Rename old migration entries
       UPDATE _prisma_migrations SET migration_name = '20260818000001_storage_key_nullable' WHERE migration_name = '20260705000001_storage_key_nullable';
       UPDATE _prisma_migrations SET migration_name = '20260818000002_data_retention' WHERE migration_name = '20260705000002_data_retention';
+
+      -- Mark migrations as applied if columns already exist (from db push)
+      INSERT INTO _prisma_migrations (id, checksum, migration_name, logs, started_at, finished_at, applied_steps_count)
+      SELECT gen_random_uuid(), 'manual', '20260818000001_storage_key_nullable', '[]', NOW(), NOW(), 1
+      WHERE NOT EXISTS (SELECT 1 FROM _prisma_migrations WHERE migration_name = '20260818000001_storage_key_nullable')
+        AND EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'session_recordings' AND column_name = 'storage_key' AND is_nullable = 'YES');
+
+      INSERT INTO _prisma_migrations (id, checksum, migration_name, logs, started_at, finished_at, applied_steps_count)
+      SELECT gen_random_uuid(), 'manual', '20260818000002_data_retention', '[]', NOW(), NOW(), 1
+      WHERE NOT EXISTS (SELECT 1 FROM _prisma_migrations WHERE migration_name = '20260818000002_data_retention')
+        AND EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'transcripts' AND column_name = 'expires_at');
+
+      INSERT INTO _prisma_migrations (id, checksum, migration_name, logs, started_at, finished_at, applied_steps_count)
+      SELECT gen_random_uuid(), 'manual', '20260818000003_terms_and_help', '[]', NOW(), NOW(), 1
+      WHERE NOT EXISTS (SELECT 1 FROM _prisma_migrations WHERE migration_name = '20260818000003_terms_and_help')
+        AND EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name = 'terms_versions');
+
+      INSERT INTO _prisma_migrations (id, checksum, migration_name, logs, started_at, finished_at, applied_steps_count)
+      SELECT gen_random_uuid(), 'manual', '20260818000004_fix_expires_at_type', '[]', NOW(), NOW(), 1
+      WHERE NOT EXISTS (SELECT 1 FROM _prisma_migrations WHERE migration_name = '20260818000004_fix_expires_at_type')
+        AND EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'transcripts' AND column_name = 'expires_at' AND data_type = 'timestamp with time zone');
     \" 2>/dev/null || true"
   vps "docker run --rm --network avesia-net \
     -e DATABASE_URL='postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@avesia-postgres:5432/${POSTGRES_DB}?schema=public' \
@@ -303,13 +325,35 @@ POSTGRES_USER=$(grep '^POSTGRES_USER=' "$SCRIPT_DIR/.env.prod" | cut -d= -f2-)
 POSTGRES_PASSWORD=$(grep '^POSTGRES_PASSWORD=' "$SCRIPT_DIR/.env.prod" | cut -d= -f2-)
 POSTGRES_DB=$(grep '^POSTGRES_DB=' "$SCRIPT_DIR/.env.prod" | cut -d= -f2-)
 
-# Fix renamed migration directories in _prisma_migrations (idempotent)
+# Fix renamed migration directories + mark already-applied migrations (idempotent)
 vps "docker run --rm --network avesia-net \
   -e PGPASSWORD='${POSTGRES_PASSWORD}' \
   avesia-postgres:latest \
   psql -h avesia-postgres -U '${POSTGRES_USER}' -d '${POSTGRES_DB}' -c \"
+    -- Rename old migration entries
     UPDATE _prisma_migrations SET migration_name = '20260818000001_storage_key_nullable' WHERE migration_name = '20260705000001_storage_key_nullable';
     UPDATE _prisma_migrations SET migration_name = '20260818000002_data_retention' WHERE migration_name = '20260705000002_data_retention';
+
+    -- Mark migrations as applied if columns already exist (from db push)
+    INSERT INTO _prisma_migrations (id, checksum, migration_name, logs, started_at, finished_at, applied_steps_count)
+    SELECT gen_random_uuid(), 'manual', '20260818000001_storage_key_nullable', '[]', NOW(), NOW(), 1
+    WHERE NOT EXISTS (SELECT 1 FROM _prisma_migrations WHERE migration_name = '20260818000001_storage_key_nullable')
+      AND EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'session_recordings' AND column_name = 'storage_key' AND is_nullable = 'YES');
+
+    INSERT INTO _prisma_migrations (id, checksum, migration_name, logs, started_at, finished_at, applied_steps_count)
+    SELECT gen_random_uuid(), 'manual', '20260818000002_data_retention', '[]', NOW(), NOW(), 1
+    WHERE NOT EXISTS (SELECT 1 FROM _prisma_migrations WHERE migration_name = '20260818000002_data_retention')
+      AND EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'transcripts' AND column_name = 'expires_at');
+
+    INSERT INTO _prisma_migrations (id, checksum, migration_name, logs, started_at, finished_at, applied_steps_count)
+    SELECT gen_random_uuid(), 'manual', '20260818000003_terms_and_help', '[]', NOW(), NOW(), 1
+    WHERE NOT EXISTS (SELECT 1 FROM _prisma_migrations WHERE migration_name = '20260818000003_terms_and_help')
+      AND EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name = 'terms_versions');
+
+    INSERT INTO _prisma_migrations (id, checksum, migration_name, logs, started_at, finished_at, applied_steps_count)
+    SELECT gen_random_uuid(), 'manual', '20260818000004_fix_expires_at_type', '[]', NOW(), NOW(), 1
+    WHERE NOT EXISTS (SELECT 1 FROM _prisma_migrations WHERE migration_name = '20260818000004_fix_expires_at_type')
+      AND EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'transcripts' AND column_name = 'expires_at' AND data_type = 'timestamp with time zone');
   \" 2>/dev/null || true"
 
 vps "docker run --rm --network avesia-net \
