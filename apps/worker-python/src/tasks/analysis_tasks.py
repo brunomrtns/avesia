@@ -1,5 +1,7 @@
 """Analysis task — clinical analysis of session transcripts."""
 
+from datetime import datetime, timedelta, timezone
+
 from celery import shared_task
 
 from ..database import get_session
@@ -51,6 +53,9 @@ def analysis_task(self, *, transcript_id: str, session_id: str, organization_id:
         # Create AIAnalysis record
         from ..utils import generate_id as cuid
 
+        # Data retention: expire after 90 days
+        expires_at = datetime.now(timezone.utc) + timedelta(days=90)
+
         analysis = AIAnalysis(
             id=cuid(),
             organization_id=organization_id,
@@ -64,6 +69,7 @@ def analysis_task(self, *, transcript_id: str, session_id: str, organization_id:
             tokens_used={"total": result.tokens_used},
             status="COMPLETED",
             duration_ms=result.latency_ms,
+            expires_at=expires_at,
         )
         session.add(analysis)
         session.commit()

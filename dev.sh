@@ -315,7 +315,7 @@ sleep 0.5
 log_ok "Opening terminal: Python Worker (Celery)"
 WORKER_PY_DIR="${SCRIPT_DIR}/apps/worker-python"
 open_service_term "Avesia Worker" \
-    "cd '${WORKER_PY_DIR}' && echo -e '\033[0;36m═══ Avesia Python Worker (Celery) ═══\033[0m' && .venv/bin/python -m celery -A src.tasks.celery_app worker --queues=transcription,analysis,summarization,notes-generation,rag-indexing --loglevel='${WORKER_LOG_LEVEL:-info}' --concurrency=4 --hostname='avesia@%h'"
+    "cd '${WORKER_PY_DIR}' && echo -e '\033[0;36m═══ Avesia Python Worker (Celery) ═══\033[0m' && .venv/bin/python -m celery -A src.tasks.celery_app worker --queues=analysis,summarization,notes-generation,rag-indexing --loglevel='${WORKER_LOG_LEVEL:-info}' --concurrency=4 --hostname='avesia@%h'"
 
 sleep 0.5
 

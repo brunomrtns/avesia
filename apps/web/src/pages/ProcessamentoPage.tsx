@@ -71,7 +71,13 @@ const STATUS_CONFIG: Record<
 const sessionFormSchema = z.object({
   patientId: z.string().min(1, 'Paciente é obrigatório'),
   professionalId: z.string().min(1, 'Profissional é obrigatório'),
-  scheduledAt: z.string().min(1, 'Data é obrigatória'),
+  scheduledAt: z.string().min(1, 'Data é obrigatória').refine(
+    (val) => {
+      const date = new Date(val);
+      return date.getTime() <= Date.now();
+    },
+    'A data não pode ser futura',
+  ),
   type: z.enum(['INITIAL', 'FOLLOW_UP', 'EMERGENCY']),
   location: z.enum(['IN_PERSON', 'VIDEO', 'PHONE']),
   notes: z.string().max(5000).optional().or(z.literal('')),
@@ -200,6 +206,7 @@ export function ProcessamentoPage(): React.ReactNode {
                 <TableHead>Tamanho</TableHead>
                 <TableHead>Status</TableHead>
                 <TableHead>Enviado em</TableHead>
+                <TableHead className="text-right">Ações</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
@@ -245,6 +252,18 @@ export function ProcessamentoPage(): React.ReactNode {
                     </TableCell>
                     <TableCell className="text-foreground-muted">
                       {format(new Date(rec.createdAt), "dd/MM/yyyy 'às' HH:mm", { locale: ptBR })}
+                    </TableCell>
+                    <TableCell className="text-right">
+                      {rec.status === 'COMPLETED' && rec.session?.id ? (
+                        <Link
+                          to={`/${orgSlug}/sessions/${rec.session.id}`}
+                          className="inline-flex items-center gap-1 text-xs font-semibold text-primary hover:underline"
+                        >
+                          Ver resultado
+                        </Link>
+                      ) : (
+                        <span className="text-foreground-muted">—</span>
+                      )}
                     </TableCell>
                   </TableRow>
                 );
@@ -316,7 +335,6 @@ function NewProcessingDialog({
     register,
     handleSubmit,
     control,
-    setValue,
     reset,
     formState: { errors },
   } = useForm<SessionFormValues>({
@@ -349,7 +367,10 @@ function NewProcessingDialog({
       setStep('upload');
       toast.success('Sessão criada. Agora envie os arquivos de áudio.');
     },
-    onError: (err) => toast.error(err instanceof Error ? err.message : 'Erro ao criar sessão'),
+    onError: (err) => {
+      const message = err instanceof Error ? err.message : 'Erro ao criar sessão';
+      toast.error(message.includes('fetch') ? 'Erro de conexão com o servidor. Verifique sua rede.' : message);
+    },
   });
 
   const uploadAllMutation = useMutation({
@@ -485,7 +506,7 @@ function NewProcessingDialog({
                     <SelectContent>
                       {patients.map((p) => (
                         <SelectItem key={p.id} value={p.id}>
-                          {p.name}
+                          {p.fullName}
                         </SelectItem>
                       ))}
                     </SelectContent>
@@ -535,30 +556,20 @@ function NewProcessingDialog({
 
             {/* Date */}
             <div className="space-y-2">
-              <div className="flex items-center justify-between">
-                <Label htmlFor="proc-date">Data da Sessão *</Label>
-                <button
-                  type="button"
-                  onClick={() => {
-                    const now = new Date();
-                    const offset = now.getTimezoneOffset();
-                    const localNow = new Date(now.getTime() - offset * 60 * 1000);
-                    setValue('scheduledAt', localNow.toISOString().slice(0, 16));
-                  }}
-                  className="text-xs font-semibold text-primary hover:underline"
-                >
-                  Usar Agora
-                </button>
-              </div>
+              <Label htmlFor="proc-date">Data da Sessão *</Label>
               <Input
                 id="proc-date"
                 type="datetime-local"
+                max={new Date().toISOString().slice(0, 16)}
                 className={cn(errors.scheduledAt && 'border-destructive')}
                 {...register('scheduledAt')}
               />
               {errors.scheduledAt && (
                 <p className="text-xs text-destructive">{errors.scheduledAt.message}</p>
               )}
+              <p className="text-xs text-foreground-muted">
+                A data da sessão não pode ser futura.
+              </p>
             </div>
 
             <div className="grid grid-cols-2 gap-4">

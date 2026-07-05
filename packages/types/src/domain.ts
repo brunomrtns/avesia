@@ -70,6 +70,7 @@ export interface Professional extends Timestamped, TenantScoped {
 
 export interface Patient extends Timestamped, TenantScoped, SoftDeletable {
   readonly id: PatientId;
+  readonly fullName: string;
   readonly name: string;
   readonly email: EmailAddress | null;
   readonly phone: PhoneNumber | null;

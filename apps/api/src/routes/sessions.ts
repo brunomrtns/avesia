@@ -468,6 +468,20 @@ Exemplo de formato:
     }));
   });
 
+  // ── GET /sessions/:id/analyses ────────────────────────────────────────
+  // Retrieve AI analyses (post-session reports) for a session.
+  app.get('/sessions/:id/analyses', async (request: FastifyRequest, _reply) => {
+    const { id } = request.params as { id: string };
+
+    const analyses = await app.prisma.aIAnalysis.findMany({
+      where: { sessionId: id, organizationId: request.organizationId },
+      orderBy: { createdAt: 'desc' },
+      take: 50,
+    });
+
+    return { items: analyses };
+  });
+
   // ── POST /sessions/:id/briefing ──────────────────────────────────────
   // Pre-session briefing: summarizes previous sessions + patient history.
   app.post('/sessions/:id/briefing', async (request: FastifyRequest, _reply) => {

@@ -11,6 +11,41 @@ import { requireAuth } from '../plugins/auth.js';
 import { requireTenant, requirePermission } from '../plugins/tenant.js';
 import { writeAuditLog } from '../utils/audit-log.js';
 
+/** Parse a single CSV line, handling quoted fields. */
+function parseCsvLine(line: string, separator: string): string[] {
+  const result: string[] = [];
+  let current = '';
+  let inQuotes = false;
+
+  for (let i = 0; i < line.length; i++) {
+    const char = line[i]!;
+
+    if (inQuotes) {
+      if (char === '"') {
+        if (line[i + 1] === '"') {
+          current += '"';
+          i++;
+        } else {
+          inQuotes = false;
+        }
+      } else {
+        current += char;
+      }
+    } else {
+      if (char === '"') {
+        inQuotes = true;
+      } else if (char === separator) {
+        result.push(current);
+        current = '';
+      } else {
+        current += char;
+      }
+    }
+  }
+  result.push(current);
+  return result;
+}
+
 const patientRoutes: FastifyPluginAsync = async (app): Promise<void> => {
   // All routes require auth + tenant
   app.addHook('onRequest', requireAuth);
@@ -415,6 +450,150 @@ const patientRoutes: FastifyPluginAsync = async (app): Promise<void> => {
 
     return memory;
   });
+
+  // ── POST /patients/import ─────────────────────────────────────────────
+  // Bulk import patients from CSV. Receives the file + mapping config.
+  app.post(
+    '/patients/import',
+    { preHandler: [requirePermission({ resource: 'patients', action: 'create' })] },
+    async (request: FastifyRequest, reply) => {
+      const data = await request.file();
+      if (!data) {
+        return reply.status(400).send({ message: 'Nenhum arquivo enviado.' });
+      }
+
+      // Mapping config comes from form fields
+      const fields = data.fields;
+      const getField = (name: string): string | undefined => {
+        const f = fields[name];
+        if (f && 'value' in f) return String(f.value);
+        return undefined;
+      };
+      const separator = getField('separator') || ',';
+      const skipHeader = getField('skipHeader') === 'true';
+      const fullNameCol = parseInt(getField('fullNameCol') ?? '', 10);
+      const emailCol = getField('emailCol') ? parseInt(getField('emailCol')!, 10) : -1;
+      const phoneCol = getField('phoneCol') ? parseInt(getField('phoneCol')!, 10) : -1;
+      const dateOfBirthCol = getField('dateOfBirthCol') ? parseInt(getField('dateOfBirthCol')!, 10) : -1;
+      const genderCol = getField('genderCol') ? parseInt(getField('genderCol')!, 10) : -1;
+
+      if (isNaN(fullNameCol) || fullNameCol < 0) {
+        return reply.status(400).send({ message: 'Coluna de nome é obrigatória.' });
+      }
+
+      // Read file content
+      const buffer = await data.toBuffer();
+      const text = buffer.toString('utf-8');
+
+      // Parse CSV
+      const lines = text.split(/\r?\n/).filter((l) => l.trim().length > 0);
+      const startIdx = skipHeader ? 1 : 0;
+
+      const results = {
+        total: 0,
+        imported: 0,
+        errors: 0,
+        duplicates: 0,
+        errorDetails: [] as string[],
+      };
+
+      const existingEmails = new Set<string>();
+      const existingNames = new Set<string>();
+
+      // Pre-load existing patients to check duplicates
+      const existing = await app.prisma.patient.findMany({
+        where: { organizationId: request.organizationId, deletedAt: null },
+        select: { email: true, fullName: true },
+      });
+      for (const p of existing) {
+        if (p.email) existingEmails.add(p.email.toLowerCase());
+        existingNames.add(p.fullName.toLowerCase());
+      }
+
+      for (let i = startIdx; i < lines.length; i++) {
+        results.total++;
+        const row = parseCsvLine(lines[i]!, separator);
+
+        const fullName = row[fullNameCol]?.trim();
+        if (!fullName) {
+          results.errors++;
+          results.errorDetails.push(`Linha ${i + 1}: nome vazio`);
+          continue;
+        }
+
+        const email = emailCol >= 0 ? row[emailCol]?.trim() || null : null;
+        const phone = phoneCol >= 0 ? row[phoneCol]?.trim() || null : null;
+        const dateOfBirthRaw = dateOfBirthCol >= 0 ? row[dateOfBirthCol]?.trim() || null : null;
+        const genderRaw = genderCol >= 0 ? row[genderCol]?.trim() || null : null;
+
+        // Check duplicates
+        if (email && existingEmails.has(email.toLowerCase())) {
+          results.duplicates++;
+          continue;
+        }
+        if (existingNames.has(fullName.toLowerCase())) {
+          results.duplicates++;
+          continue;
+        }
+
+        // Parse date of birth (accept YYYY-MM-DD, DD/MM/YYYY)
+        let dateOfBirth: Date | null = null;
+        if (dateOfBirthRaw) {
+          const dmy = dateOfBirthRaw.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/);
+          const ymd = dateOfBirthRaw.match(/^(\d{4})-(\d{1,2})-(\d{1,2})$/);
+          if (dmy) {
+            dateOfBirth = new Date(`${dmy[3]}-${dmy[2]!.padStart(2, '0')}-${dmy[1]!.padStart(2, '0')}`);
+          } else if (ymd) {
+            dateOfBirth = new Date(`${ymd[1]}-${ymd[2]!.padStart(2, '0')}-${ymd[3]!.padStart(2, '0')}`);
+          }
+        }
+
+        // Parse gender
+        let gender: string | null = null;
+        if (genderRaw) {
+          const g = genderRaw.toUpperCase();
+          if (['M', 'MALE', 'MASCULINO'].includes(g)) gender = 'MALE';
+          else if (['F', 'FEMALE', 'FEMININO'].includes(g)) gender = 'FEMALE';
+          else if (['O', 'OTHER', 'OUTRO'].includes(g)) gender = 'OTHER';
+          else gender = 'UNKNOWN';
+        }
+
+        try {
+          await app.prisma.patient.create({
+            data: {
+              id: generateId(),
+              organizationId: request.organizationId,
+              fullName,
+              email,
+              phone,
+              dateOfBirth,
+              gender,
+              status: 'ACTIVE',
+            },
+          });
+          results.imported++;
+          if (email) existingEmails.add(email.toLowerCase());
+          existingNames.add(fullName.toLowerCase());
+        } catch (err) {
+          results.errors++;
+          results.errorDetails.push(`Linha ${i + 1}: ${err instanceof Error ? err.message : 'erro desconhecido'}`);
+        }
+      }
+
+      void writeAuditLog(app.prisma, {
+        organizationId: request.organizationId,
+        userId: request.userId,
+        action: 'IMPORT',
+        resource: 'patient',
+        resourceId: 'bulk',
+        metadata: { ...results },
+        ipAddress: request.ip,
+        userAgent: request.headers['user-agent'] ?? '',
+      });
+
+      return reply.status(200).send(results);
+    },
+  );
 };
 
 export default patientRoutes;

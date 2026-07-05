@@ -20,6 +20,7 @@ next-env.d.ts
 .env
 .env.local
 .env.prod
+.env-worker-local
 .env.*.local
 !.env.example
 !.env.*.example
@@ -117,3 +118,6 @@ DEPLOY.md
 deploy.sh
 dev.sh
 
+avesia-secrets-backup-*.tar.gz.gpg
+test-results/
+playwright-report/

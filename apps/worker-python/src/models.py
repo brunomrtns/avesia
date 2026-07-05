@@ -89,6 +89,7 @@ class Transcript(Base):
     language = Column(String, default="pt-BR")
     provider = Column(String)
     token_count = Column(Integer)
+    expires_at = Column(DateTime)
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
@@ -152,6 +153,7 @@ class AIAnalysis(Base):
     status = Column(String, default="PENDING")
     error_message = Column(Text)
     duration_ms = Column(Integer)
+    expires_at = Column(DateTime)
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 

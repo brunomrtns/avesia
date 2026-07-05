@@ -258,7 +258,7 @@ model SessionRecording {
   id              String    @id @default(cuid())
   organizationId  String    @map("organization_id")
   sessionId       String    @map("session_id")
-  storageKey      String    @map("storage_key")
+  storageKey      String?   @map("storage_key")
   /// Allowed values: MP3 | WAV | M4A | MP4 | WEBM
   format          String
   durationSeconds Int?      @map("duration_seconds")
@@ -294,6 +294,8 @@ model Transcript {
   /// Which AI provider generated this transcript (openrouter | nvidia-nim | ollama)
   provider        String?
   tokenCount      Int?      @map("token_count")
+  /// Data retention: record is eligible for cleanup after this date.
+  expiresAt       DateTime? @map("expires_at")
   createdAt       DateTime  @default(now()) @map("created_at")
   updatedAt       DateTime  @updatedAt @map("updated_at")
 
@@ -400,6 +402,8 @@ model AIAnalysis {
   status          String    @default("PENDING")
   errorMessage    String?   @map("error_message")
   durationMs      Int?      @map("duration_ms")
+  /// Data retention: record is eligible for cleanup after this date.
+  expiresAt       DateTime? @map("expires_at")
   createdAt       DateTime  @default(now()) @map("created_at")
   updatedAt       DateTime  @updatedAt @map("updated_at")
 

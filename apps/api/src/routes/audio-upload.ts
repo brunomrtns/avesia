@@ -137,7 +137,10 @@ const audioUploadRoutes: FastifyPluginAsync = async (app): Promise<void> => {
         userAgent: request.headers['user-agent'] ?? '',
       });
 
-      return reply.status(201).send(recording);
+      return reply.status(201).send({
+        ...recording,
+        sizeBytes: recording.sizeBytes?.toString() ?? null,
+      });
     },
   );
 
@@ -193,7 +196,9 @@ const audioUploadRoutes: FastifyPluginAsync = async (app): Promise<void> => {
 
       // Best-effort delete from MinIO (don't fail the request if the file is gone).
       try {
-        await deleteFile(recording.storageKey);
+        if (recording.storageKey) {
+          await deleteFile(recording.storageKey);
+        }
       } catch (err) {
         request.log.warn({ err, storageKey: recording.storageKey }, '[audio-upload] failed to delete file from MinIO');
       }

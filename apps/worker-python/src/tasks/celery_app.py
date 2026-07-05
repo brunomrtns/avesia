@@ -40,8 +40,9 @@ app.conf.update(
 )
 
 # Queue names (matching the TS worker)
+# NOTE: 'transcription' is NOT included — that queue is consumed by the
+# local Whisper worker (scripts/worker-local.py) running on a GPU machine.
 QUEUE_NAMES = [
-    "transcription",
     "analysis",
     "summarization",
     "notes-generation",

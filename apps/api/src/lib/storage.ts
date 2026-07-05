@@ -24,6 +24,24 @@ export async function ensureBucket(): Promise<void> {
   if (!exists) {
     await mc.makeBucket(env.MINIO_BUCKET);
   }
+  // Set lifecycle rule: delete objects under sessions/ after 1 day.
+  // This is a safety net — the worker deletes audio immediately after
+  // transcription, but if the worker crashes, MinIO will clean up.
+  try {
+    await mc.setBucketLifecycle(env.MINIO_BUCKET, {
+      Rule: [
+        {
+          ID: 'expire-session-audio',
+          Status: 'Enabled',
+          Filter: { Prefix: 'sessions/' },
+          Expiration: { Days: 1 },
+        },
+      ],
+    });
+  } catch {
+    // Lifecycle rule may already exist or MinIO version doesn't support it.
+    // Non-fatal — the worker still deletes audio explicitly.
+  }
   bucketReady = true;
 }
 

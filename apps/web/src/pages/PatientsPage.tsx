@@ -12,6 +12,7 @@ import {
   Plus,
   Search,
   Trash2,
+  Upload,
   Users,
 } from 'lucide-react';
 
@@ -37,6 +38,7 @@ import {
 } from '@/components/ui/table';
 import { api } from '@/lib/api-client';
 import { cn } from '@/lib/utils';
+import { ImportPatientsDialog } from '@/components/patients/ImportPatientsDialog';
 
 const patientFormSchema = z.object({
   name: z.string().min(1, 'Nome é obrigatório').max(300),
@@ -54,6 +56,7 @@ export function PatientsPage(): React.ReactNode {
   const [statusFilter, setStatusFilter] = useState<string>('');
   const [dialogOpen, setDialogOpen] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
+  const [importOpen, setImportOpen] = useState(false);
 
   const pageSize = 20;
 
@@ -170,16 +173,25 @@ export function PatientsPage(): React.ReactNode {
           </Select>
         </div>
 
-        <Button
-          onClick={() => {
-            setEditingId(null);
-            setDialogOpen(true);
-          }}
-          variant="gradient"
-        >
-          <Plus className="h-4 w-4" />
-          Novo Paciente
-        </Button>
+        <div className="flex gap-2">
+          <Button
+            variant="outline"
+            onClick={() => setImportOpen(true)}
+          >
+            <Upload className="h-4 w-4" />
+            Importar CSV
+          </Button>
+          <Button
+            onClick={() => {
+              setEditingId(null);
+              setDialogOpen(true);
+            }}
+            variant="gradient"
+          >
+            <Plus className="h-4 w-4" />
+            Novo Paciente
+          </Button>
+        </div>
       </div>
 
       {/* Table */}
@@ -308,6 +320,9 @@ export function PatientsPage(): React.ReactNode {
           />
         </DialogContent>
       </Dialog>
+
+      {/* Import CSV Dialog */}
+      <ImportPatientsDialog open={importOpen} onOpenChange={setImportOpen} />
     </div>
   );
 }

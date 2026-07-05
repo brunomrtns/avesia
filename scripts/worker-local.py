@@ -61,7 +61,7 @@ WHISPER_COMPUTE_TYPE = os.environ.get("WHISPER_COMPUTE_TYPE", "auto")
 WHISPER_LANGUAGE = os.environ.get("WHISPER_LANGUAGE", "pt")
 WHISPER_BEAM_SIZE = int(os.environ.get("WHISPER_BEAM_SIZE", "5"))
 
-WORKER_ID = os.environ.get("WORKER_ID", f"local-worker-{socket.gethostname()}")
+WORKER_ID = os.environ.get("WORKER_ID") or f"local-worker-{socket.gethostname()}"
 HEARTBEAT_INTERVAL = int(os.environ.get("HEARTBEAT_INTERVAL", "25"))
 
 LOG_LEVEL = os.environ.get("WORKER_LOG_LEVEL", "INFO").upper()

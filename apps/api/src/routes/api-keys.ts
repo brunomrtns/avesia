@@ -28,7 +28,7 @@ const apiKeyRoutes: FastifyPluginAsync = async (app): Promise<void> => {
   // List API keys for the org (without showing the full key).
   app.get('/api-keys', async (request: FastifyRequest, _reply) => {
     const keys = await app.prisma.apiKey.findMany({
-      where: { organizationId: request.organizationId },
+      where: { organizationId: request.organizationId, revokedAt: null },
       orderBy: { createdAt: 'desc' },
       select: {
         id: true,
@@ -36,12 +36,12 @@ const apiKeyRoutes: FastifyPluginAsync = async (app): Promise<void> => {
         keyPrefix: true,
         lastUsedAt: true,
         expiresAt: true,
-        revokedAt: true,
         createdAt: true,
+        updatedAt: true,
       },
     });
 
-    return { items: keys };
+    return keys;
   });
 
   // ── POST /api-keys ────────────────────────────────────────────────────
@@ -84,12 +84,16 @@ const apiKeyRoutes: FastifyPluginAsync = async (app): Promise<void> => {
 
       // Return the full key ONCE (never retrievable again).
       return reply.status(201).send({
-        id: record.id,
-        name: record.name,
-        keyPrefix: record.keyPrefix,
+        apiKey: {
+          id: record.id,
+          name: record.name,
+          keyPrefix: record.keyPrefix,
+          lastUsedAt: null,
+          expiresAt: record.expiresAt,
+          createdAt: record.createdAt,
+          updatedAt: record.updatedAt,
+        },
         key, // full key — shown only this once
-        expiresAt: record.expiresAt,
-        createdAt: record.createdAt,
       });
     },
   );

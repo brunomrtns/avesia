@@ -226,6 +226,14 @@ export interface PatientMemory {
   sessionCount: number;
 }
 
+export interface PatientImportResult {
+  total: number;
+  imported: number;
+  errors: number;
+  duplicates: number;
+  errorDetails: string[];
+}
+
 // ── Onboarding types ────────────────────────────────────────────────────────
 
 export interface OnboardingSuggestion {
@@ -564,6 +572,8 @@ export const api = {
       request<PatientProfile>(`/patients/${id}/profile`),
     getMemory: (id: string): Promise<PatientMemory> =>
       request<PatientMemory>(`/patients/${id}/memory`),
+    import: (data: FormData): Promise<PatientImportResult> =>
+      request<PatientImportResult>('/patients/import', { method: 'POST', body: data }),
   },
 
   sessions: {
@@ -613,6 +623,8 @@ export const api = {
       request<SessionRecording>(`/sessions/${id}/audio/${recordingId}`),
     deleteAudio: (id: string, recordingId: string): Promise<void> =>
       request<void>(`/sessions/${id}/audio/${recordingId}`, { method: 'DELETE' }),
+    listAnalyses: (id: string): Promise<{ items: unknown[] }> =>
+      request<{ items: unknown[] }>(`/sessions/${id}/analyses`),
   },
 
   recordings: {
