@@ -114,10 +114,7 @@ celerybeat.pid
 # --- Infrastructure docs (contain VPS IP, WireGuard config, etc) ---
 DEPLOY.md
 
-# --- Deploy/dev scripts (depend on my-vps, not part of the product code) ---
-deploy.sh
-dev.sh
-
+# --- Backups / test artifacts ---
 avesia-secrets-backup-*.tar.gz.gpg
 test-results/
 playwright-report/
