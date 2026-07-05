@@ -1,7 +1,6 @@
 import { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { usePagination } from '@/hooks/use-pagination';
-import { useListFilters } from '@/hooks/use-list-filters';
+import { useListQuery } from '@/hooks/use-list-query';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
@@ -53,8 +52,12 @@ type PatientFormValues = z.infer<typeof patientFormSchema>;
 
 export function PatientsPage(): React.ReactNode {
   const queryClient = useQueryClient();
-  const { page, pageSize, prevPage, nextPage, resetPage, totalPages } = usePagination();
-  const { filters, setFilter, activeFilters } = useListFilters<{ search: string; status: string }>();
+  const {
+    page, pageSize, prevPage, nextPage, totalPages,
+    filters, setFilter, activeFilters,
+  } = useListQuery<{ search: string; status: string }>({
+    filterKeys: ['search', 'status'],
+  });
   const [dialogOpen, setDialogOpen] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [importOpen, setImportOpen] = useState(false);
@@ -149,7 +152,6 @@ export function PatientsPage(): React.ReactNode {
               value={filters.search}
               onChange={(e) => {
                 setFilter('search', e.target.value);
-                resetPage();
               }}
             />
           </div>
@@ -158,7 +160,6 @@ export function PatientsPage(): React.ReactNode {
             value={filters.status || 'all'}
             onValueChange={(v) => {
               setFilter('status', v === 'all' ? '' : v);
-              resetPage();
             }}
           >
             <SelectTrigger className="w-[160px]">

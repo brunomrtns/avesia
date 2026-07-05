@@ -8,8 +8,7 @@ import { format } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
 import { Link, useParams, useSearchParams } from 'react-router-dom';
 import { useAuthStore } from '@/stores/auth-store';
-import { usePagination } from '@/hooks/use-pagination';
-import { useListFilters } from '@/hooks/use-list-filters';
+import { useListQuery } from '@/hooks/use-list-query';
 import {
   Plus,
   Loader2,
@@ -91,9 +90,14 @@ const STATUS_VARIANTS: Record<string, 'default' | 'warning' | 'success' | 'destr
 export function SessionsPage(): React.ReactNode {
   const { orgSlug } = useParams<{ orgSlug: string }>();
   const queryClient = useQueryClient();
-  const { page, pageSize, prevPage, nextPage, resetPage, totalPages } = usePagination();
-  const { filters, setFilter, activeFilters } = useListFilters<{ status: string; from: string; to: string }>();
   const [searchParams] = useSearchParams();
+
+  const {
+    page, pageSize, prevPage, nextPage, totalPages,
+    filters, setFilter, activeFilters,
+  } = useListQuery<{ status: string; from: string; to: string }>({
+    filterKeys: ['status', 'from', 'to'],
+  });
 
   // Open dialog automatically if ?new=true (initial state, no effect needed)
   const [dialogOpen, setDialogOpen] = useState(() => searchParams.get('new') === 'true');
@@ -166,7 +170,6 @@ export function SessionsPage(): React.ReactNode {
             value={filters.status || 'all'}
             onValueChange={(v) => {
               setFilter('status', v === 'all' ? '' : v);
-              resetPage();
             }}
           >
             <SelectTrigger className="w-[160px]">
@@ -187,7 +190,6 @@ export function SessionsPage(): React.ReactNode {
             value={filters.from}
             onChange={(e) => {
               setFilter('from', e.target.value);
-              resetPage();
             }}
             placeholder="De"
           />
@@ -198,7 +200,6 @@ export function SessionsPage(): React.ReactNode {
             value={filters.to}
             onChange={(e) => {
               setFilter('to', e.target.value);
-              resetPage();
             }}
             placeholder="Até"
           />
