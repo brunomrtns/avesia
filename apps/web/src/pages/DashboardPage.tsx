@@ -261,7 +261,7 @@ export function DashboardPage(): React.ReactNode {
           </h1>
         </div>
         <Button asChild variant="gradient" size="sm">
-          <Link to={`/${orgSlug}/sessions`}>
+          <Link to={`/${orgSlug}/sessions?new=true`}>
             <Plus className="h-4 w-4" />
             Nova Sessão
           </Link>

@@ -111,7 +111,7 @@ export function OnboardingPage(): React.ReactNode {
       label: 'Sessões Criadas',
       value: progress?.sessionsCreated ?? 0,
       icon: <Calendar className="h-5 w-5 text-primary" />,
-      link: `/${orgSlug}/sessions`,
+      link: `/${orgSlug}/sessions?new=true`,
       linkLabel: 'Nova sessão',
     },
   ];
@@ -273,7 +273,7 @@ export function OnboardingPage(): React.ReactNode {
               </Link>
             </Button>
             <Button asChild variant="outline" className="justify-start">
-              <Link to={`/${orgSlug}/sessions`}>
+              <Link to={`/${orgSlug}/sessions?new=true`}>
                 <Calendar className="h-4 w-4 text-primary" />
                 Nova Sessão
               </Link>

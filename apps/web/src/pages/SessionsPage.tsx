@@ -6,7 +6,7 @@ import { z } from 'zod';
 import { toast } from 'sonner';
 import { format } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
-import { Link, useParams } from 'react-router-dom';
+import { Link, useParams, useSearchParams } from 'react-router-dom';
 import { AuthContext } from '@/lib/auth-context';
 import {
   Plus,
@@ -94,6 +94,17 @@ export function SessionsPage(): React.ReactNode {
   const [fromDate, setFromDate] = useState('');
   const [toDate, setToDate] = useState('');
   const [dialogOpen, setDialogOpen] = useState(false);
+  const [searchParams, setSearchParams] = useSearchParams();
+
+  // Open dialog automatically if ?new=true
+  useEffect(() => {
+    if (searchParams.get('new') === 'true') {
+      setDialogOpen(true);
+      // Clean the URL so it doesn't re-open on refresh
+      searchParams.delete('new');
+      setSearchParams(searchParams, { replace: true });
+    }
+  }, [searchParams, setSearchParams]);
   const [briefingSession, setBriefingSession] = useState<{ id: string; patientName: string } | null>(null);
 
   const pageSize = 20;
