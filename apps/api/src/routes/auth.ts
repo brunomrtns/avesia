@@ -76,12 +76,26 @@ const authRoutes: FastifyPluginAsync = async (app): Promise<void> => {
       userAgent: request.headers['user-agent'] ?? '',
     });
 
+    // Check if user needs to accept any terms
+    const activeTerms = await app.prisma.termsVersion.findMany({
+      where: { isActive: true },
+    });
+    const acceptedTerms = await app.prisma.termsAcceptance.findMany({
+      where: { userId: user.id },
+      select: { termsVersionId: true },
+    });
+    const acceptedIds = new Set(acceptedTerms.map((a) => a.termsVersionId));
+    const pendingTerms = activeTerms
+      .filter((t) => !acceptedIds.has(t.id))
+      .map((t) => ({ id: t.id, type: t.type, version: t.version, title: t.title, summary: t.summary }));
+
     return reply.status(200).send({
       user: stripPasswordHash(user as unknown as Record<string, unknown>),
       organization: user.organization
         ? { slug: user.organization.slug, name: user.organization.name }
         : null,
       tokens,
+      pendingTerms,
     });
   });
 
@@ -156,10 +170,19 @@ const authRoutes: FastifyPluginAsync = async (app): Promise<void> => {
       userAgent: request.headers['user-agent'] ?? '',
     });
 
+    // New users need to accept all active terms
+    const activeTerms = await app.prisma.termsVersion.findMany({
+      where: { isActive: true },
+    });
+    const pendingTerms = activeTerms.map((t) => ({
+      id: t.id, type: t.type, version: t.version, title: t.title, summary: t.summary,
+    }));
+
     return reply.status(201).send({
       organization: result.organization,
       user: stripPasswordHash(result.user as unknown as Record<string, unknown>),
       tokens,
+      pendingTerms,
     });
   });
 

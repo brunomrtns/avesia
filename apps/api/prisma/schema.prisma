@@ -93,6 +93,7 @@ model User {
   auditLogs       AuditLog[]
   refreshTokens   RefreshToken[]
   acknowledgedAlerts ClinicalAlert[] @relation("AlertAcknowledgedBy")
+  termsAcceptances   TermsAcceptance[]
 
   @@unique([organizationId, email])
   @@index([organizationId])
@@ -957,3 +958,47 @@ model ClinicalAlert {
   @@map("clinical_alerts")
 }
 
+
+// ============================================================================
+// 30. TermsVersion — Versioned terms of use, AI notice, privacy policy
+// ============================================================================
+model TermsVersion {
+  id          String    @id @default(cuid())
+  /// Allowed values: TERMS_OF_USE | AI_NOTICE | PRIVACY_POLICY
+  type        String
+  version     String    // semver: "1.0.0"
+  title       String
+  /// Markdown content of the terms
+  content     String
+  /// Summary shown in the acceptance dialog (short version)
+  summary     String?
+  isActive    Boolean   @default(false) @map("is_active")
+  publishedAt DateTime? @map("published_at")
+  createdAt   DateTime  @default(now()) @map("created_at")
+  updatedAt   DateTime  @updatedAt @map("updated_at")
+
+  acceptances TermsAcceptance[]
+
+  @@unique([type, version])
+  @@index([type, isActive])
+  @@map("terms_versions")
+}
+
+// ============================================================================
+// 31. TermsAcceptance — User's acceptance of a specific terms version
+// ============================================================================
+model TermsAcceptance {
+  id              String    @id @default(cuid())
+  userId          String    @map("user_id")
+  termsVersionId  String    @map("terms_version_id")
+  acceptedAt      DateTime  @default(now()) @map("accepted_at")
+  ipAddress       String?   @map("ip_address")
+  userAgent       String?   @map("user_agent")
+
+  user          User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  termsVersion  TermsVersion @relation(fields: [termsVersionId], references: [id], onDelete: Restrict)
+
+  @@unique([userId, termsVersionId])
+  @@index([userId])
+  @@map("terms_acceptances")
+}

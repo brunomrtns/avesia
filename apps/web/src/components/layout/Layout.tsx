@@ -7,6 +7,7 @@ import {
   Cpu,
   FileAudio,
   FileBarChart,
+  HelpCircle,
   KeyRound,
   LayoutDashboard,
   LogOut,
@@ -44,6 +45,7 @@ import { NeuralIndicator } from '@/components/ui/neural-indicator';
 import { AuthContext } from '@/lib/auth-context';
 import { useTheme } from '@/lib/theme-context';
 import { BrandLogo, BRAND } from '@/components/branding/BrandLogo';
+import { TermsAcceptanceDialog } from '@/components/terms/TermsAcceptanceDialog';
 import { cn } from '@/lib/utils';
 
 interface NavItem {
@@ -64,6 +66,7 @@ const NAV_ITEMS: readonly NavItem[] = [
   { label: 'Relatórios', path: 'reports', icon: <FileBarChart className="h-[18px] w-[18px]" />, shortcut: 'G R' },
   { label: 'Provedores de IA', path: 'ai-providers', icon: <Cpu className="h-[18px] w-[18px]" />, shortcut: 'G A' },
   { label: 'Chaves de API', path: 'api-keys', icon: <KeyRound className="h-[18px] w-[18px]" />, shortcut: 'G V' },
+  { label: 'Central de Ajuda', path: 'help', icon: <HelpCircle className="h-[18px] w-[18px]" />, shortcut: 'G H' },
   { label: 'Configurações', path: 'settings', icon: <Settings className="h-[18px] w-[18px]" />, shortcut: 'G C' },
 ];
 
@@ -77,6 +80,7 @@ const PAGE_TITLES: Record<string, string> = {
   reports: 'Relatórios',
   'ai-providers': 'Provedores de IA',
   'api-keys': 'Chaves de API',
+  help: 'Central de Ajuda',
   settings: 'Configurações',
 };
 
@@ -370,6 +374,10 @@ export function Layout(): ReactNode {
                 {theme === 'dark' ? <Sun className="h-4 w-4" /> : <Moon className="h-4 w-4" />}
                 <span>{theme === 'dark' ? 'Tema claro' : 'Tema escuro'}</span>
               </CommandItem>
+              <CommandItem onSelect={() => { handleNavigate('help'); setCommandOpen(false); }}>
+                <HelpCircle className="h-4 w-4" />
+                <span>Central de Ajuda</span>
+              </CommandItem>
               <CommandItem onSelect={() => { auth.logout(); navigate('/'); setCommandOpen(false); }}>
                 <LogOut className="h-4 w-4" />
                 <span>Sair</span>
@@ -377,6 +385,14 @@ export function Layout(): ReactNode {
             </CommandGroup>
           </CommandList>
         </CommandDialog>
+
+        {/* Terms acceptance blocking dialog */}
+        {auth.pendingTerms.length > 0 && (
+          <TermsAcceptanceDialog
+            pendingTerms={auth.pendingTerms}
+            onAccepted={auth.clearPendingTerms}
+          />
+        )}
       </div>
     </TooltipProvider>
   );

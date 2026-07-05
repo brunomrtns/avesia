@@ -44,6 +44,9 @@ const ApiKeysPage = lazy(() =>
 const ProcessamentoPage = lazy(() =>
   import('@/pages/ProcessamentoPage').then((m) => ({ default: m.ProcessamentoPage })),
 );
+const HelpPage = lazy(() =>
+  import('@/pages/HelpPage').then((m) => ({ default: m.HelpPage })),
+);
 
 function PageLoader() {
   return (
@@ -156,6 +159,22 @@ export default function App(): React.ReactNode {
             element={
               <Suspense fallback={<PageLoader />}>
                 <ProcessamentoPage />
+              </Suspense>
+            }
+          />
+          <Route
+            path="help"
+            element={
+              <Suspense fallback={<PageLoader />}>
+                <HelpPage />
+              </Suspense>
+            }
+          />
+          <Route
+            path="help/:articleId"
+            element={
+              <Suspense fallback={<PageLoader />}>
+                <HelpPage />
               </Suspense>
             }
           />

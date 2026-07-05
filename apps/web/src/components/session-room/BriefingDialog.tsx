@@ -5,6 +5,7 @@ import { FileText, Loader2, Sparkles } from 'lucide-react';
 
 import { api } from '@/lib/api-client';
 import type { BriefingResponse } from '@/lib/api-client';
+import { AIDisclaimer } from '@/components/ui/ai-disclaimer';
 import { Button } from '@/components/ui/button';
 import {
   Dialog,
@@ -117,6 +118,7 @@ export function BriefingDialog({
             </div>
           )}
         </div>
+        <AIDisclaimer variant="footer" className="px-6 pb-4" />
       </DialogContent>
     </Dialog>
   );

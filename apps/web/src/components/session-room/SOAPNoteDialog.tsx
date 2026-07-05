@@ -5,6 +5,7 @@ import { ClipboardList, Loader2, Sparkles, CheckCircle2 } from 'lucide-react';
 
 import { api } from '@/lib/api-client';
 import type { SOAPNoteResponse, SOAPContent } from '@/lib/api-client';
+import { AIDisclaimer } from '@/components/ui/ai-disclaimer';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import {
@@ -190,6 +191,7 @@ export function SOAPNoteDialog({
             </div>
           )}
         </div>
+        <AIDisclaimer variant="footer" className="px-6 pb-4" />
       </DialogContent>
     </Dialog>
   );

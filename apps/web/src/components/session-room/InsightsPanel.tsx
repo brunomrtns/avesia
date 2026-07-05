@@ -16,6 +16,7 @@ import { Button } from '@/components/ui/button';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { NeuralIndicator } from '@/components/ui/neural-indicator';
 import { AIThinkingState } from '@/components/ui/ai-thinking';
+import { AIDisclaimer } from '@/components/ui/ai-disclaimer';
 import { MarkdownRenderer } from '@/components/session-room/MarkdownRenderer';
 import { AssistanceCard } from '@/components/session-room/AssistanceCard';
 import { CopilotSettingsPanel } from '@/components/session-room/CopilotSettingsPanel';
@@ -228,6 +229,11 @@ export function InsightsPanel({ sessionId, hasSegments, onGenerate }: InsightsPa
             </button>
           </div>
         )}
+
+        {/* Discreet AI disclaimer */}
+        <div className="relative mt-2">
+          <AIDisclaimer variant="inline" />
+        </div>
       </div>
 
       {/* Settings panel (collapsible) */}

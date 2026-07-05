@@ -234,6 +234,38 @@ export interface PatientImportResult {
   errorDetails: string[];
 }
 
+// ── Terms types ─────────────────────────────────────────────────────────────
+
+export interface TermsVersion {
+  id: string;
+  type: 'TERMS_OF_USE' | 'AI_NOTICE' | 'PRIVACY_POLICY';
+  version: string;
+  title: string;
+  content: string;
+  summary: string | null;
+  isActive: boolean;
+  publishedAt: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface TermsAcceptanceStatus {
+  accepted: Array<{
+    id: string;
+    termsVersionId: string;
+    type: string;
+    version: string;
+    acceptedAt: string;
+  }>;
+  pending: Array<{
+    id: string;
+    type: string;
+    version: string;
+    title: string;
+    summary: string | null;
+  }>;
+}
+
 // ── Onboarding types ────────────────────────────────────────────────────────
 
 export interface OnboardingSuggestion {
@@ -574,6 +606,17 @@ export const api = {
       request<PatientMemory>(`/patients/${id}/memory`),
     import: (data: FormData): Promise<PatientImportResult> =>
       request<PatientImportResult>('/patients/import', { method: 'POST', body: data }),
+  },
+
+  terms: {
+    getCurrent: (): Promise<{ items: TermsVersion[] }> =>
+      request<{ items: TermsVersion[] }>('/terms/current'),
+    getByType: (type: string): Promise<TermsVersion> =>
+      request<TermsVersion>(`/terms/${type}/current`),
+    getAcceptanceStatus: (): Promise<TermsAcceptanceStatus> =>
+      request<TermsAcceptanceStatus>('/terms/acceptances/me'),
+    accept: (termsVersionIds: string[]): Promise<{ accepted: number }> =>
+      request<{ accepted: number }>('/terms/accept', { method: 'POST', body: { termsVersionIds } }),
   },
 
   sessions: {

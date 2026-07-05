@@ -29,6 +29,7 @@ import publicApiRoutes from './routes/public-api.js';
 import apiKeyRoutes from './routes/api-keys.js';
 import workerHeartbeatRoutes from './routes/worker-heartbeat.js';
 import transcriptReceiverRoutes from './routes/transcript-receiver.js';
+import termsRoutes from './routes/terms.js';
 import { startCopilotSweep, stopCopilotSweep } from './services/session-copilot-service.js';
 
 async function bootstrap(): Promise<void> {
@@ -78,6 +79,7 @@ async function bootstrap(): Promise<void> {
   // routes so they use their own auth hook instead of requireAuth/requireTenant)
   await app.register(workerHeartbeatRoutes);
   await app.register(transcriptReceiverRoutes);
+  await app.register(termsRoutes);
 
   // --- Start copilot periodic sweep ---
   // This ensures sessions with pending segments get processed even if the

@@ -47,10 +47,19 @@ export interface OrgInfo {
   readonly name: string;
 }
 
+export interface PendingTermsVersion {
+  readonly id: string;
+  readonly type: 'TERMS_OF_USE' | 'AI_NOTICE' | 'PRIVACY_POLICY';
+  readonly version: string;
+  readonly title: string;
+  readonly summary: string | null;
+}
+
 export interface LoginResponse {
   readonly user: User;
   readonly organization: OrgInfo | null;
   readonly tokens: AuthTokens;
+  readonly pendingTerms?: readonly PendingTermsVersion[];
 }
 
 export interface RefreshRequest {

@@ -7,7 +7,7 @@ import {
   type ReactNode,
 } from 'react';
 
-import type { User } from '@avesia/types';
+import type { PendingTermsVersion, User } from '@avesia/types';
 
 import {
   api,
@@ -22,12 +22,14 @@ interface AuthState {
   readonly orgName: string | null;
   readonly isLoading: boolean;
   readonly isAuthenticated: boolean;
+  readonly pendingTerms: readonly PendingTermsVersion[];
 }
 
 interface AuthContextValue extends AuthState {
   readonly login: (email: string, password: string) => Promise<void>;
   readonly logout: () => void;
   readonly updateOrgSlug: (slug: string, name?: string) => void;
+  readonly clearPendingTerms: () => void;
 }
 
 const AuthContext = createContext<AuthContextValue | null>(null);
@@ -37,6 +39,7 @@ export function AuthProvider({ children }: { readonly children: ReactNode }): Re
   const [orgSlug, setOrgSlug] = useState<string | null>(null);
   const [orgName, setOrgName] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(true);
+  const [pendingTerms, setPendingTerms] = useState<readonly PendingTermsVersion[]>([]);
 
   useEffect(() => {
     const token = getRefreshToken();
@@ -80,6 +83,7 @@ export function AuthProvider({ children }: { readonly children: ReactNode }): Re
     setUser(res.user);
     setOrgSlug(res.organization?.slug ?? null);
     setOrgName(res.organization?.name ?? null);
+    setPendingTerms(res.pendingTerms ?? []);
   }, []);
 
   const logout = useCallback((): void => {
@@ -88,11 +92,16 @@ export function AuthProvider({ children }: { readonly children: ReactNode }): Re
     setUser(null);
     setOrgSlug(null);
     setOrgName(null);
+    setPendingTerms([]);
   }, []);
 
   const updateOrgSlug = useCallback((slug: string, name?: string): void => {
     setOrgSlug(slug);
     if (name !== undefined) setOrgName(name);
+  }, []);
+
+  const clearPendingTerms = useCallback((): void => {
+    setPendingTerms([]);
   }, []);
 
   const value = useMemo<AuthContextValue>(
@@ -102,11 +111,13 @@ export function AuthProvider({ children }: { readonly children: ReactNode }): Re
       orgName,
       isLoading,
       isAuthenticated: user !== null,
+      pendingTerms,
       login,
       logout,
       updateOrgSlug,
+      clearPendingTerms,
     }),
-    [user, orgSlug, orgName, isLoading, login, logout, updateOrgSlug],
+    [user, orgSlug, orgName, isLoading, pendingTerms, login, logout, updateOrgSlug, clearPendingTerms],
   );
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;

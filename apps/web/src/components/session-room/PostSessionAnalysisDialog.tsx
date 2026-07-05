@@ -5,6 +5,7 @@ import { ChartLine, Loader2, Sparkles } from 'lucide-react';
 
 import { api } from '@/lib/api-client';
 import type { PostSessionAnalysisResponse } from '@/lib/api-client';
+import { AIDisclaimer } from '@/components/ui/ai-disclaimer';
 import { Button } from '@/components/ui/button';
 import {
   Dialog,
@@ -135,6 +136,7 @@ export function PostSessionAnalysisDialog({
             </div>
           )}
         </div>
+        <AIDisclaimer variant="footer" className="px-6 pb-4" />
       </DialogContent>
     </Dialog>
   );
