@@ -1,9 +1,10 @@
-import { useState, useMemo, useCallback } from 'react';
+import { useState, useMemo, useCallback, useRef } from 'react';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
 import {
   AlertCircle,
   CheckCircle2,
+  ChevronDown,
   FileUp,
   Loader2,
   Upload,
@@ -59,15 +60,17 @@ export function ImportPatientsDialog({ open, onOpenChange }: ImportPatientsDialo
   const [skipHeader, setSkipHeader] = useState(true);
   const [columnMapping, setColumnMapping] = useState<Record<string, string>>({});
   const [result, setResult] = useState<PatientImportResult | null>(null);
+  const [isDragging, setIsDragging] = useState(false);
+  const [fileText, setFileText] = useState<string | null>(null);
+  const [previewCollapsed, setPreviewCollapsed] = useState(false);
+  const dragCounter = useRef(0);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   // Parse preview
   const preview = useMemo(() => {
-    if (!file) return null;
+    if (!file || !fileText) return null;
 
-    const text = fileTextCache.get(file);
-    if (text === undefined) return null;
-
-    const lines = text.split(/\r?\n/).filter((l) => l.trim().length > 0);
+    const lines = fileText.split(/\r?\n/).filter((l) => l.trim().length > 0);
     const startIdx = skipHeader ? 1 : 0;
     const previewRows: string[][] = [];
     for (let i = startIdx; i < Math.min(startIdx + 10, lines.length); i++) {
@@ -82,7 +85,7 @@ export function ImportPatientsDialog({ open, onOpenChange }: ImportPatientsDialo
     }));
 
     return { previewRows, columnOptions, totalLines: lines.length - startIdx };
-  }, [file, separator, skipHeader]);
+  }, [file, fileText, separator, skipHeader]);
 
   const importMutation = useMutation({
     mutationFn: async () => {
@@ -115,17 +118,17 @@ export function ImportPatientsDialog({ open, onOpenChange }: ImportPatientsDialo
     },
   });
 
-  const handleFileSelect = useCallback(async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const selectedFile = e.target.files?.[0];
-    if (!selectedFile) return;
+  const processFile = useCallback(async (selectedFile: File) => {
     setFile(selectedFile);
     setResult(null);
     setColumnMapping({});
+    setFileText(null);
+
+    // Read file content
+    const text = await selectedFile.text();
+    setFileText(text);
 
     // Auto-detect separator
-    const text = await selectedFile.text();
-    fileTextCache.set(selectedFile, text);
-
     const counts: Record<string, number> = { ',': 0, ';': 0, '|': 0, '\t': 0 };
     const firstLine = text.split(/\r?\n/).find((l) => l.trim().length > 0) ?? '';
     for (const sep of Object.keys(counts)) {
@@ -137,8 +140,57 @@ export function ImportPatientsDialog({ open, onOpenChange }: ImportPatientsDialo
     }
   }, []);
 
+  const handleFileSelect = useCallback(async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const selectedFile = e.target.files?.[0];
+    if (!selectedFile) return;
+    await processFile(selectedFile);
+    // Reset so the same file can be selected again later
+    e.target.value = '';
+  }, [processFile]);
+
+  const handleDrop = useCallback(async (e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    dragCounter.current = 0;
+    setIsDragging(false);
+
+    const droppedFile = e.dataTransfer.files?.[0];
+    if (!droppedFile) return;
+
+    // Accept only CSV-like files
+    const isCsv = droppedFile.name.endsWith('.csv') || droppedFile.type === 'text/csv';
+    if (!isCsv) {
+      toast.error('Apenas arquivos CSV são suportados.');
+      return;
+    }
+
+    await processFile(droppedFile);
+  }, [processFile]);
+
+  const handleDragEnter = useCallback((e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    dragCounter.current += 1;
+    setIsDragging(true);
+  }, []);
+
+  const handleDragLeave = useCallback((e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    dragCounter.current -= 1;
+    if (dragCounter.current === 0) {
+      setIsDragging(false);
+    }
+  }, []);
+
+  const handleDragOver = useCallback((e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+  }, []);
+
   const handleReset = () => {
     setFile(null);
+    setFileText(null);
     setResult(null);
     setColumnMapping({});
   };
@@ -147,7 +199,7 @@ export function ImportPatientsDialog({ open, onOpenChange }: ImportPatientsDialo
 
   return (
     <Dialog open={open} onOpenChange={(v) => { onOpenChange(v); if (!v) handleReset(); }}>
-      <DialogContent className="max-w-3xl max-h-[90vh] overflow-y-auto">
+      <DialogContent className="max-w-5xl max-h-[90vh] overflow-y-auto">
         <DialogHeader>
           <DialogTitle>Importar Pacientes — CSV</DialogTitle>
         </DialogHeader>
@@ -158,20 +210,33 @@ export function ImportPatientsDialog({ open, onOpenChange }: ImportPatientsDialo
             <div className="space-y-2">
               <Label>Arquivo CSV</Label>
               {!file ? (
-                <label
-                  className="flex flex-col items-center justify-center gap-2 rounded-lg border-2 border-dashed border-border p-8 cursor-pointer hover:border-primary/50 transition-colors"
+                <div
+                  onDrop={handleDrop}
+                  onDragEnter={handleDragEnter}
+                  onDragLeave={handleDragLeave}
+                  onDragOver={handleDragOver}
+                  onClick={() => fileInputRef.current?.click()}
+                  className={cn(
+                    'flex flex-col items-center justify-center gap-2 rounded-lg border-2 border-dashed p-8 cursor-pointer transition-colors',
+                    isDragging
+                      ? 'border-primary bg-primary/10 scale-[1.01]'
+                      : 'border-border hover:border-primary/50',
+                  )}
                 >
-                  <FileUp className="h-8 w-8 text-foreground-muted" />
+                  <FileUp className={cn('h-8 w-8 transition-colors', isDragging ? 'text-primary' : 'text-foreground-muted')} />
                   <span className="text-sm text-foreground-secondary">
-                    Clique para selecionar um arquivo .csv
+                    {isDragging
+                      ? 'Solte o arquivo aqui'
+                      : 'Clique para selecionar ou arraste um arquivo .csv'}
                   </span>
                   <input
+                    ref={fileInputRef}
                     type="file"
                     accept=".csv,text/csv"
                     className="hidden"
                     onChange={handleFileSelect}
                   />
-                </label>
+                </div>
               ) : (
                 <div className="flex items-center justify-between rounded-lg border border-border bg-surface p-3">
                   <div className="flex items-center gap-2 min-w-0">
@@ -217,37 +282,50 @@ export function ImportPatientsDialog({ open, onOpenChange }: ImportPatientsDialo
 
                 {/* Preview */}
                 <div className="space-y-2">
-                  <Label className="text-xs">
-                    Preview ({preview.previewRows.length} de {preview.totalLines} linhas)
-                  </Label>
-                  <div className="rounded-lg border border-border overflow-x-auto max-h-64">
-                    <Table>
-                      <TableHeader>
-                        <TableRow>
-                          <TableHead className="w-10 text-center">#</TableHead>
-                          {preview.previewRows[0]?.map((_, idx) => (
-                            <TableHead key={idx} className="whitespace-nowrap">
-                              Col {idx + 1}
-                            </TableHead>
-                          )) ?? null}
-                        </TableRow>
-                      </TableHeader>
-                      <TableBody>
-                        {preview.previewRows.map((row, rowIdx) => (
-                          <TableRow key={rowIdx}>
-                            <TableCell className="text-center text-xs text-foreground-muted">
-                              {skipHeader ? rowIdx + 2 : rowIdx + 1}
-                            </TableCell>
-                            {preview.previewRows[0]?.map((_, colIdx) => (
-                              <TableCell key={colIdx} className="text-xs whitespace-nowrap max-w-[200px] truncate">
-                                {row[colIdx] ?? ''}
-                              </TableCell>
+                  <div
+                    onClick={() => setPreviewCollapsed((v) => !v)}
+                    className="flex w-full items-center gap-1.5 cursor-pointer select-none py-1"
+                  >
+                    <ChevronDown
+                      className={cn(
+                        'h-4 w-4 text-foreground-secondary transition-transform',
+                        previewCollapsed ? '-rotate-90' : '',
+                      )}
+                    />
+                    <span className="text-xs text-foreground-secondary">
+                      Preview ({preview.previewRows.length} de {preview.totalLines} linhas)
+                    </span>
+                  </div>
+                  {!previewCollapsed && (
+                    <div className="rounded-lg border border-border overflow-hidden">
+                      <Table>
+                        <TableHeader>
+                          <TableRow>
+                            <TableHead className="w-10 text-center">#</TableHead>
+                            {preview.previewRows[0]?.map((_, idx) => (
+                              <TableHead key={idx}>
+                                Col {idx + 1}
+                              </TableHead>
                             )) ?? null}
                           </TableRow>
-                        ))}
-                      </TableBody>
-                    </Table>
-                  </div>
+                        </TableHeader>
+                        <TableBody>
+                          {preview.previewRows.map((row, rowIdx) => (
+                            <TableRow key={rowIdx}>
+                              <TableCell className="text-center text-xs text-foreground-muted">
+                                {skipHeader ? rowIdx + 2 : rowIdx + 1}
+                              </TableCell>
+                              {preview.previewRows[0]?.map((_, colIdx) => (
+                                <TableCell key={colIdx} className="text-xs break-words">
+                                  {row[colIdx] ?? ''}
+                                </TableCell>
+                              )) ?? null}
+                            </TableRow>
+                          ))}
+                        </TableBody>
+                      </Table>
+                    </div>
+                  )}
                 </div>
 
                 {/* Column mapping */}
@@ -385,8 +463,6 @@ function ResultCard({ icon, label, value, className }: {
 }
 
 // ── CSV parsing helpers ──────────────────────────────────────────────────────
-
-const fileTextCache = new WeakMap<File, string>();
 
 function parseCsvLine(line: string, separator: string): string[] {
   const result: string[] = [];

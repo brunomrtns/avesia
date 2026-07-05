@@ -15,6 +15,7 @@ import {
 } from '@/components/ui/dialog';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Badge } from '@/components/ui/badge';
+import { MarkdownRenderer } from '@/components/session-room/MarkdownRenderer';
 import { cn } from '@/lib/utils';
 
 interface TermsAcceptanceDialogProps {
@@ -40,7 +41,7 @@ export function TermsAcceptanceDialog({
   const [contents, setContents] = useState<Record<string, string>>({});
   const [loading, setLoading] = useState(true);
   const [accepting, setAccepting] = useState(false);
-  const [checked, setChecked] = useState<Record<string, boolean>>({});
+  const [accepted, setAccepted] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   // Sort: AI_NOTICE first (most important for this product), then TERMS, then PRIVACY
@@ -57,7 +58,7 @@ export function TermsAcceptanceDialog({
     setOpen(true);
     setLoading(true);
     setActiveIndex(0);
-    setChecked({});
+    setAccepted(false);
     setError(null);
 
     void (async () => {
@@ -79,10 +80,10 @@ export function TermsAcceptanceDialog({
   }, [pendingTerms]);
 
   const current = sortedTerms[activeIndex];
-  const allChecked = sortedTerms.every((t) => checked[t.id] === true);
+  const allRead = !loading && contents !== null;
 
   const handleAccept = useCallback(async () => {
-    if (!allChecked) return;
+    if (!accepted) return;
     setAccepting(true);
     setError(null);
     try {
@@ -94,21 +95,8 @@ export function TermsAcceptanceDialog({
     } finally {
       setAccepting(false);
     }
-  }, [allChecked, sortedTerms, onAccepted]);
+  }, [accepted, sortedTerms, onAccepted]);
 
-  const handleNext = useCallback(() => {
-    if (activeIndex < sortedTerms.length - 1) {
-      setActiveIndex(activeIndex + 1);
-    }
-  }, [activeIndex, sortedTerms.length]);
-
-  const handlePrev = useCallback(() => {
-    if (activeIndex > 0) {
-      setActiveIndex(activeIndex - 1);
-    }
-  }, [activeIndex]);
-
-  const isLast = activeIndex === sortedTerms.length - 1;
   const currentMeta = current ? TYPE_META[current.type] : null;
 
   return (
@@ -135,7 +123,6 @@ export function TermsAcceptanceDialog({
             const meta = TYPE_META[t.type];
             const Icon = meta.icon;
             const isActive = i === activeIndex;
-            const isChecked = checked[t.id] === true;
             return (
               <button
                 key={t.id}
@@ -150,7 +137,6 @@ export function TermsAcceptanceDialog({
               >
                 <Icon className="h-4 w-4" />
                 <span>{meta.label}</span>
-                {isChecked && <ShieldCheck className="h-3.5 w-3.5 text-success" />}
               </button>
             );
           })}
@@ -181,66 +167,69 @@ export function TermsAcceptanceDialog({
               )}
 
               <ScrollArea className="max-h-[40vh] px-6">
-                <div className="prose prose-sm prose-invert max-w-none pb-4 font-clinical text-foreground-secondary [&_h1]:text-foreground [&_h2]:text-foreground [&_h3]:text-foreground [&_strong]:text-foreground">
-                  <pre className="whitespace-pre-wrap font-clinical text-sm leading-relaxed">
-                    {contents[current.id] ?? 'Conteúdo indisponível.'}
-                  </pre>
+                <div className="pb-4">
+                  <MarkdownRenderer content={contents[current.id] ?? 'Conteúdo indisponível.'} />
                 </div>
               </ScrollArea>
-
-              {/* Acceptance checkbox */}
-              <div className="border-t border-border px-6 py-4">
-                <label className="flex cursor-pointer items-start gap-3">
-                  <Checkbox
-                    checked={checked[current.id] === true}
-                    onCheckedChange={(v) =>
-                      setChecked((prev) => ({ ...prev, [current.id]: v === true }))
-                    }
-                  />
-                  <span className="text-sm text-foreground-secondary">
-                    Li e estou de acordo com a <strong className="text-foreground">versão {current.version}</strong> do
-                    documento <strong className="text-foreground">{current.title}</strong>. Compreendo que este aceite
-                    fica registrado com data, hora e minha identificação.
-                  </span>
-                </label>
-              </div>
             </>
           ) : null}
         </div>
 
-        {/* Footer */}
-        <div className="flex items-center justify-between border-t border-border px-6 py-4">
-          <div className="flex items-center gap-2 text-sm text-foreground-muted">
-            <span>{activeIndex + 1} de {sortedTerms.length}</span>
-            {error && <span className="text-destructive">{error}</span>}
+        {/* Footer with single acceptance checkbox */}
+        <div className="border-t border-border px-6 py-4 space-y-3">
+          {error && (
+            <p className="text-sm text-destructive">{error}</p>
+          )}
+          <div className="rounded-lg border-2 border-primary/30 bg-primary/5 px-4 py-4">
+            <label className="flex cursor-pointer items-start gap-3">
+              <Checkbox
+                checked={accepted}
+                onCheckedChange={(v) => setAccepted(v === true)}
+                className="mt-0.5 h-6 w-6 rounded-md border-2 border-foreground/40 bg-surface data-[state=checked]:bg-primary data-[state=checked]:border-primary data-[state=unchecked]:border-foreground/50 [&_svg]:h-4 [&_svg]:w-4"
+              />
+              <span className="text-sm text-foreground-secondary">
+                Li e estou de acordo com <strong className="text-foreground">todos os documentos</strong> acima
+                ({sortedTerms.length} documento{sortedTerms.length !== 1 ? 's' : ''}). Compreendo que este aceite
+                fica registrado com data, hora e minha identificação.
+              </span>
+            </label>
           </div>
-          <div className="flex items-center gap-2">
-            <Button
-              variant="ghost"
-              size="sm"
-              onClick={handlePrev}
-              disabled={activeIndex === 0}
-            >
-              Anterior
-            </Button>
-            {!isLast ? (
-              <Button size="sm" onClick={handleNext} disabled={!checked[current?.id ?? '']}>
-                Próximo
-              </Button>
-            ) : (
+
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-2 text-sm text-foreground-muted">
+              <span>{activeIndex + 1} de {sortedTerms.length}</span>
+            </div>
+            <div className="flex items-center gap-2">
               <Button
+                variant="ghost"
                 size="sm"
-                onClick={handleAccept}
-                disabled={!allChecked || accepting}
+                onClick={() => setActiveIndex((i) => Math.max(0, i - 1))}
+                disabled={activeIndex === 0}
               >
-                {accepting ? (
-                  <Loader2 className="h-4 w-4 animate-spin" />
-                ) : (
-                  <ShieldCheck className="h-4 w-4" />
-                )}
-                Aceitar todos e continuar
+                Anterior
               </Button>
-            )}
+              {activeIndex < sortedTerms.length - 1 ? (
+                <Button
+                  size="sm"
+                  onClick={() => setActiveIndex((i) => i + 1)}
+                >
+                  Próximo
+                </Button>
+              ) : (
+                <Button
+                  size="sm"
+                  onClick={handleAccept}
+                  disabled={!accepted || accepting || !allRead}
+                >
+                  {accepting ? (
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                  ) : (
+                    <ShieldCheck className="h-4 w-4" />
+                  )}
+                  Aceitar e continuar
+                </Button>
+              )}
+            </div>
           </div>
         </div>
       </DialogContent>

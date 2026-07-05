@@ -585,9 +585,11 @@
    ═══════════════════════════════════════════════════════════════════════════ */
 @layer utilities {
   .animate-fade-in { animation: fade-in 0.3s ease-out; }
+  .animate-fade-out { animation: fade-in 0.15s ease-out reverse; }
   .animate-fade-in-up { animation: fade-in-up 0.4s cubic-bezier(0.16, 1, 0.3, 1); }
   .animate-fade-in-down { animation: fade-in-down 0.3s cubic-bezier(0.16, 1, 0.3, 1); }
   .animate-scale-in { animation: scale-in 0.2s cubic-bezier(0.16, 1, 0.3, 1); }
+  .animate-scale-out { animation: scale-in 0.15s cubic-bezier(0.16, 1, 0.3, 1) reverse; }
   .animate-scale-in-up { animation: scale-in-up 0.35s cubic-bezier(0.16, 1, 0.3, 1); }
   .animate-slide-in-right { animation: slide-in-right 0.3s cubic-bezier(0.16, 1, 0.3, 1); }
   .animate-shimmer { animation: shimmer 2.5s ease-in-out infinite; }

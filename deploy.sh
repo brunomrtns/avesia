@@ -59,6 +59,7 @@ BUILD_ONLY=0
 NO_BUILD=0
 MIGRATE_ONLY=0
 NO_COMMIT=0
+AUTO_COMMIT=0
 BUMP="patch"
 
 while [[ $# -gt 0 ]]; do
@@ -67,6 +68,7 @@ while [[ $# -gt 0 ]]; do
     --no-build)     NO_BUILD=1;    shift ;;
     --migrate-only) MIGRATE_ONLY=1; shift ;;
     --no-commit)    NO_COMMIT=1;   shift ;;
+    --auto-commit)  AUTO_COMMIT=1; shift ;;
     --bump)         BUMP="$2";     shift 2 ;;
     -h|--help)
       echo "Uso: ./deploy.sh [opções]"
@@ -75,6 +77,7 @@ while [[ $# -gt 0 ]]; do
       echo "  --no-build         Pula o build (usa imagens existentes)"
       echo "  --migrate-only     Só roda migrations"
       echo "  --no-commit        Não commita/bumpa versão após deploy"
+      echo "  --auto-commit      Commita mudanças não-commitadas antes do deploy"
       echo "  --bump patch|minor|major  Tipo de bump (default: patch)"
       exit 0
       ;;
@@ -105,15 +108,78 @@ log "Verificando pré-requisitos..."
 
 if [[ "$MIGRATE_ONLY" -eq 0 ]]; then
   if [[ -n "$(git status --porcelain 2>/dev/null)" ]]; then
-    err "Working tree não está limpa. Commite suas mudanças antes do deploy."
-    echo ""
-    git status --short
-    echo ""
-    echo "  Para commitar:"
-    echo "    git add -A && git commit -m 'sua mensagem'"
-    exit 1
+    if [[ "$AUTO_COMMIT" -eq 1 ]]; then
+
+      # ── Safety: block sensitive files ──────────────────────────────────────
+      SENSITIVE=$(git status --porcelain | awk '{print $2}' | grep -iE '\.env($|\.|[^.])|secret|\.pem|\.key|id_rsa|id_ed25519|credentials|\.p12|\.pfx' || true)
+      if [[ -n "$SENSITIVE" ]]; then
+        err "Arquivos sensíveis detectados — auto-commit abortado:"
+        echo "$SENSITIVE" | sed 's/^/    /'
+        echo ""
+        echo "  Commite manualmente após revisar:"
+        echo "    git add -A && git commit -m 'sua mensagem'"
+        exit 1
+      fi
+
+      # ── Generate semantic commit message ───────────────────────────────────
+      CHANGED_FILES=$(git status --porcelain | awk '{print $2}')
+      CHANGES=$(echo "$CHANGED_FILES" | wc -l)
+      log "Auto-commitando $CHANGES arquivo(s) modificado(s)..."
+
+      # Categorize changes
+      HAS_FRONTEND=$(echo "$CHANGED_FILES" | grep -qE '^apps/web/' && echo 1 || echo 0)
+      HAS_BACKEND=$(echo "$CHANGED_FILES" | grep -qE '^apps/api/' && echo 1 || echo 0)
+      HAS_WORKER=$(echo "$CHANGED_FILES" | grep -qE '^apps/worker-python/' && echo 1 || echo 0)
+      HAS_PACKAGES=$(echo "$CHANGED_FILES" | grep -qE '^packages/' && echo 1 || echo 0)
+      HAS_MIGRATIONS=$(echo "$CHANGED_FILES" | grep -qE 'migrations/' && echo 1 || echo 0)
+      HAS_CONFIG=$(echo "$CHANGED_FILES" | grep -qE 'deploy\.sh|docker-compose|Dockerfile|\.gitignore|package\.json|tsconfig|eslint|\.npmrc' && echo 1 || echo 0)
+      HAS_DOCS=$(echo "$CHANGED_FILES" | grep -qE '\.md$' && echo 1 || echo 0)
+
+      # Build scope list
+      SCOPES=()
+      [[ "$HAS_FRONTEND" -eq 1 ]] && SCOPES+=("frontend")
+      [[ "$HAS_BACKEND" -eq 1 ]] && SCOPES+=("backend")
+      [[ "$HAS_WORKER" -eq 1 ]] && SCOPES+=("worker")
+      [[ "$HAS_PACKAGES" -eq 1 ]] && SCOPES+=("packages")
+      [[ "$HAS_MIGRATIONS" -eq 1 ]] && SCOPES+=("migrations")
+      [[ "$HAS_CONFIG" -eq 1 ]] && SCOPES+=("config")
+      [[ "$HAS_DOCS" -eq 1 ]] && SCOPES+=("docs")
+      SCOPE_STR=$(IFS=', '; echo "${SCOPES[*]}")
+
+      # Build file summary (top 5 files, truncated)
+      FILE_SUMMARY=$(echo "$CHANGED_FILES" | head -5 | sed 's/^/  - /')
+      REMAINING=$((CHANGES - 5))
+      if [[ "$REMAINING" -gt 0 ]]; then
+        FILE_SUMMARY="$FILE_SUMMARY
+  - ... e mais $REMAINING arquivo(s)"
+      fi
+
+      git add -A
+      git commit -m "$(cat <<EOF
+chore(${SCOPE_STR}): pre-deploy auto-commit
+
+Arquivos modificados:
+$FILE_SUMMARY
+
+
+EOF
+)"
+      ok "Mudanças commitadas (scope: ${SCOPE_STR})"
+    else
+      err "Working tree não está limpa. Commite suas mudanças antes do deploy."
+      echo ""
+      git status --short
+      echo ""
+      echo "  Para commitar manualmente:"
+      echo "    git add -A && git commit -m 'sua mensagem'"
+      echo ""
+      echo "  Ou use --auto-commit (analisa mudanças e commita automaticamente):"
+      echo "    ./deploy.sh --auto-commit"
+      exit 1
+    fi
+  else
+    ok "Working tree limpa"
   fi
-  ok "Working tree limpa"
 fi
 
 # Versão atual
@@ -320,9 +386,7 @@ chore: bump versão v$NEW_VERSION
 Deploy: $(date -u +%Y-%m-%dT%H:%M:%SZ)
 Rollback: $DEPLOY_TAG
 
-Generated with [Devin](https://devin.ai)
 
-Co-Authored-By: Devin <158243242+devin-ai-integration[bot]@users.noreply.github.com>
 EOF
 )"
 
