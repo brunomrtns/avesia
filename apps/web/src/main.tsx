@@ -8,6 +8,7 @@ import { Toaster } from 'sonner';
 import { useAuthStore } from '@/stores/auth-store';
 import { queryClient } from '@/lib/query-client';
 import { ErrorBoundary } from '@/components/ui/error-boundary';
+import { UpdatePrompt } from '@/components/update-prompt/UpdatePrompt';
 import { BRAND } from '@/components/branding/BrandLogo';
 import App from '@/App';
 import '@/index.css';
@@ -33,6 +34,7 @@ createRoot(document.getElementById('root')!).render(
         <BrowserRouter basename={import.meta.env.BASE_URL}>
           <AppInitializer>
             <App />
+            <UpdatePrompt />
             <Toaster
               richColors
               position="top-right"
