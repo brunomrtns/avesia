@@ -245,6 +245,14 @@ if [[ "$MIGRATE_ONLY" -eq 1 ]]; then
       WHERE NOT EXISTS (SELECT 1 FROM _prisma_migrations WHERE migration_name = '20260818000004_fix_expires_at_type')
         AND EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'transcripts' AND column_name = 'expires_at' AND data_type = 'timestamp with time zone');
     \" 2>/dev/null || true"
+  # Resolve any failed migrations (mark as applied — columns already exist from db push)
+  for MIG in 20260818000001_storage_key_nullable 20260818000002_data_retention 20260818000003_terms_and_help 20260818000004_fix_expires_at_type; do
+    vps "docker run --rm --network avesia-net \
+      -e DATABASE_URL='postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@avesia-postgres:5432/${POSTGRES_DB}?schema=public' \
+      -v $VPS_PATH/apps/api/prisma:/app/apps/api/prisma:ro \
+      -w /app/apps/api avesia-api:latest \
+      sh -c 'node \$(find /app/node_modules/.pnpm -path \"*/prisma/build/index.js\" | head -1) migrate resolve --applied ${MIG}' 2>&1 || true"
+  done
   vps "docker run --rm --network avesia-net \
     -e DATABASE_URL='postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@avesia-postgres:5432/${POSTGRES_DB}?schema=public' \
     -v $VPS_PATH/apps/api/prisma:/app/apps/api/prisma:ro \
@@ -355,6 +363,15 @@ vps "docker run --rm --network avesia-net \
     WHERE NOT EXISTS (SELECT 1 FROM _prisma_migrations WHERE migration_name = '20260818000004_fix_expires_at_type')
       AND EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'transcripts' AND column_name = 'expires_at' AND data_type = 'timestamp with time zone');
   \" 2>/dev/null || true"
+
+# Resolve any failed migrations (mark as applied — columns already exist from db push)
+for MIG in 20260818000001_storage_key_nullable 20260818000002_data_retention 20260818000003_terms_and_help 20260818000004_fix_expires_at_type; do
+  vps "docker run --rm --network avesia-net \
+    -e DATABASE_URL='postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@avesia-postgres:5432/${POSTGRES_DB}?schema=public' \
+    -v $VPS_PATH/apps/api/prisma:/app/apps/api/prisma:ro \
+    -w /app/apps/api avesia-api:latest \
+    sh -c 'node \$(find /app/node_modules/.pnpm -path \"*/prisma/build/index.js\" | head -1) migrate resolve --applied ${MIG}' 2>&1 || true"
+done
 
 vps "docker run --rm --network avesia-net \
   -e DATABASE_URL='postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@avesia-postgres:5432/${POSTGRES_DB}?schema=public' \
