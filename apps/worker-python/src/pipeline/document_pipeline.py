@@ -255,6 +255,13 @@ class DocumentPipeline:
                 topics.add(chunk.section)
         ctx.topics = list(topics)[:15]
 
+        # Rollback any pending transaction to ensure clean session state
+        # (spaCy NER + LLM can take minutes, leaving session stale)
+        try:
+            self._session.rollback()
+        except Exception:
+            pass
+
         self._graph_builder.build(
             self._session,
             ctx.knowledge_base_id,
