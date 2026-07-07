@@ -260,21 +260,38 @@ log "Step 2/7: Sincronizando .env..."
 vps_cp "$SCRIPT_DIR/.env.prod" "$VPS_PATH/.env"
 ok ".env sincronizado"
 
+# ── Helper: buildar imagem e abortar se falhar ────────────────────────────────
+# Roda o build remoto, captura o exit code real (não mascara com pipe) e
+# imprime os últimos 30 linhas do log. Aborta o deploy se o build falhar.
+build_image() {
+  local name="$1" dockerfile="$2"
+  log "  Buildando $name..."
+  local log_file
+  log_file=$(mktemp)
+  local exit_code=0
+  vps "cd $VPS_PATH && docker build -f $dockerfile -t $name:latest . 2>&1; echo \"EXIT_CODE=\$?\"" > "$log_file" 2>&1 || exit_code=$?
+
+  # Extrai o exit code real do build remoto (última linha EXIT_CODE=N)
+  local remote_exit
+  remote_exit=$(grep -oP 'EXIT_CODE=\K[0-9]+' "$log_file" | tail -1)
+  rm -f "$log_file"
+
+  if [[ "$exit_code" -ne 0 || "$remote_exit" != "0" ]]; then
+    err "$name FALHOU no build (exit: ${remote_exit:-$exit_code})"
+    err "Rode manualmente para ver o log completo:"
+    err "  my-vps \"cd $VPS_PATH && docker build -f $dockerfile -t $name:latest .\""
+    exit 1
+  fi
+  ok "$name buildada"
+}
+
 # ── Step 3: Build das imagens ────────────────────────────────────────────────
 if [[ "$NO_BUILD" -eq 0 ]]; then
   log "Step 3/7: Buildando imagens Docker na VPS..."
 
-  log "  Buildando avesia-api..."
-  vps "cd $VPS_PATH && docker build -f apps/api/Dockerfile -t avesia-api:latest . 2>&1 | tail -5"
-  ok "avesia-api buildada"
-
-  log "  Buildando avesia-web..."
-  vps "cd $VPS_PATH && docker build -f apps/web/Dockerfile -t avesia-web:latest . 2>&1 | tail -5"
-  ok "avesia-web buildada"
-
-  log "  Buildando avesia-worker..."
-  vps "cd $VPS_PATH && docker build -f apps/worker-python/Dockerfile -t avesia-worker:latest . 2>&1 | tail -5"
-  ok "avesia-worker buildada"
+  build_image "avesia-api"    "apps/api/Dockerfile"
+  build_image "avesia-web"    "apps/web/Dockerfile"
+  build_image "avesia-worker" "apps/worker-python/Dockerfile"
 else
   log "Step 3/7: Build pulado (--no-build)"
 fi
@@ -286,7 +303,16 @@ fi
 
 # ── Step 4: Subir a stack ────────────────────────────────────────────────────
 log "Step 4/7: Subindo stack com docker compose..."
-vps "cd $VPS_PATH && docker compose -f docker-compose.prod.yml up -d 2>&1 | tail -20"
+COMPOSE_LOG=$(mktemp)
+COMPOSE_EXIT=0
+vps "cd $VPS_PATH && docker compose -f docker-compose.prod.yml up -d 2>&1; echo \"EXIT_CODE=\$?\"" > "$COMPOSE_LOG" 2>&1 || COMPOSE_EXIT=$?
+COMPOSE_REMOTE_EXIT=$(grep -oP 'EXIT_CODE=\K[0-9]+' "$COMPOSE_LOG" | tail -1)
+tail -20 "$COMPOSE_LOG"
+rm -f "$COMPOSE_LOG"
+if [[ "$COMPOSE_EXIT" -ne 0 || "$COMPOSE_REMOTE_EXIT" != "0" ]]; then
+  err "docker compose up FALHOU (exit: ${COMPOSE_REMOTE_EXIT:-$COMPOSE_EXIT})"
+  exit 1
+fi
 ok "Stack iniciada"
 
 # ── Step 5: Migrations ───────────────────────────────────────────────────────
