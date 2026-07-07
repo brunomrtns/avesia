@@ -59,6 +59,9 @@ class Settings(BaseSettings):
 
     # Pipeline cost control
     kb_max_extraction_chunks: int = Field(default=10, alias="KB_MAX_EXTRACTION_CHUNKS")
+    kb_max_entities: int = Field(default=60, alias="KB_MAX_ENTITIES")
+    kb_max_relations: int = Field(default=30, alias="KB_MAX_RELATIONS")
+    kb_min_entity_frequency: int = Field(default=2, alias="KB_MIN_ENTITY_FREQUENCY")
 
     # Pipeline modes
     kb_entity_mode: Literal["ner", "llm"] = Field(default="ner", alias="KB_ENTITY_MODE")

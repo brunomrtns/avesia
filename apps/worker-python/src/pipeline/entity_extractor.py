@@ -1,15 +1,16 @@
-"""Entity & relation extractor — LLM-based, domain-agnostic.
+"""Entity & relation extractor — hybrid approach (spaCy NER + LLM relation typing).
 
-Single LLM call per document extracts:
-- Entities (concepts, techniques, disorders, people, organizations)
-- Typed relations (TREATS, CAUSES, IS_A, PART_OF, RELATED_TO)
+Stage 1: spaCy NER + noun phrase extraction across ALL chunks (local, deterministic)
+Stage 2: Dedup by lemma, rank by frequency, select top N entities
+Stage 3: One LLM call to type relations between top entities (if ai_client available)
 
-No hardcoded dictionaries. The LLM understands the domain from context.
-spaCy is used only for lemmatization (canonical entity names).
+This replaces the old approach of sending 8 chunks to the LLM and asking it to
+extract everything — which saw <2% of the document and produced generic results.
 """
 
 import json
 import re
+from collections import Counter, defaultdict
 from dataclasses import dataclass, field
 
 from .chunker import TextChunk
@@ -21,7 +22,8 @@ class ExtractedEntity:
     type: str  # CONCEPT | PERSON | DISORDER | TECHNIQUE | ORGANIZATION | PLACE | PROTOCOL | TERM
     description: str = ""
     lemma: str = ""
-    chunk_index: int = 0  # which chunk this entity was extracted from
+    chunk_index: int = 0
+    source_count: int = 1  # how many chunks mention this entity
 
 
 @dataclass
@@ -41,7 +43,7 @@ class ExtractionResult:
     relations: list[ExtractedRelation] = field(default_factory=list)
 
 
-# ── spaCy for lemmatization only (lazy loaded) ─────────────────────────────
+# ── spaCy for NER + lemmatization (lazy loaded) ──────────────────────────────
 
 _nlp = None
 
@@ -69,7 +71,6 @@ def _lemmatize(name: str) -> str:
     doc = nlp(name[:200])
     if len(doc) == 0:
         return name.lower()
-    # Use the root token's lemma, or the first token's
     root = next((t for t in doc if t.dep_ == "ROOT"), doc[0])
     return root.lemma_.lower()
 
@@ -82,8 +83,56 @@ def _canonical_key(name: str) -> str:
     return _normalize(name)
 
 
+# ── spaCy label → Avesia type mapping ────────────────────────────────────────
+
+SPACY_LABEL_MAP = {
+    "PER": "PERSON",
+    "PESSOA": "PERSON",
+    "ORG": "ORGANIZATION",
+    "ORGANIZACAO": "ORGANIZATION",
+    "LOC": "PLACE",
+    "LOCAL": "PLACE",
+    "MISC": "CONCEPT",
+}
+
+# Generic terms to filter out (not meaningful entities)
+GENERIC_TERMS = {
+    # Articles + common words
+    "este", "esta", "esse", "essa", "isso", "isto", "aquilo", "aquele",
+    "forma", "caso", "tipo", "parte", "vez", "vezes", "coisa", "modo",
+    "maneira", "aspecto", "elemento", "item", "exemplo", "situação",
+    "resultado", "informação", "dados", "texto", "conteúdo", "capítulo",
+    "figura", "tabela", "quadro", "imagem", "página", "seção", "subseção",
+    # Generic academic structure
+    "introdução", "conclusão", "referências", "bibliografia", "apêndice",
+    "anexo", "resumo", "abstract", "summary", "keywords", "palavras-chave",
+    # Numbers/units
+    "valor", "número", "quantidade", "total", "média", "porcentagem",
+    # Pronouns/conjunctions that slip through
+    "outro", "outros", "outra", "outras", "mesmo", "mesma", "cada",
+    "todos", "todas", "todo", "toda", "alguns", "algumas",
+}
+
+# Leading words to strip from noun phrases
+LEADING_STRIP = {
+    "o", "a", "os", "as", "um", "uma", "uns", "umas",
+    "de", "da", "do", "das", "dos", "d", "na", "no", "nas", "nos",
+    "em", "por", "para", "com", "sem", "sob", "sobre",
+    "que", "e", "ou", "mas", "pois", "como", "quando",
+    "seu", "sua", "seus", "suas", "meu", "minha", "nosso", "nossa",
+    "este", "esta", "estes", "estas", "esse", "essa", "esses", "essas",
+    "aquele", "aquela", "aqueles", "aquelas",
+    "qualquer", "todo", "toda", "cada",
+}
+
+
 class EntityExtractor:
-    """LLM-based entity and relation extractor. Domain-agnostic."""
+    """Hybrid entity and relation extractor.
+
+    Stage 1: spaCy NER + noun phrases across all chunks (local, free)
+    Stage 2: Dedup by lemma, rank by frequency
+    Stage 3: One LLM call to type relations (if ai_client and entity_mode=llm)
+    """
 
     def __init__(self, ai_client=None):
         self._ai_client = ai_client
@@ -92,82 +141,231 @@ class EntityExtractor:
         self,
         chunks: list[TextChunk],
         *,
-        max_chunks: int = 10,
+        max_entities: int = 60,
+        max_relations: int = 30,
+        min_frequency: int = 2,
+        entity_mode: str = "ner",
         on_progress=None,
     ) -> ExtractionResult:
-        if not self._ai_client:
+        nlp = _get_nlp()
+        if not nlp or not chunks:
             return ExtractionResult()
 
-        # Select the most content-rich chunks, keeping original index
-        sorted_chunks = sorted(enumerate(chunks), key=lambda x: len(x[1].content), reverse=True)
-        selected = sorted_chunks[:max_chunks]
-        selected.sort(key=lambda x: x[0])
-        # Keep (original_index, chunk) pairs
-        selected_with_idx = [(idx, c) for idx, c in selected]
-
+        # ── Stage 1: spaCy NER + noun phrases across ALL chunks ───────────
         if on_progress:
-            on_progress(1, 2)
+            on_progress(1, 3)
 
-        # Single LLM call: extract entities + relations
-        raw = self._llm_extract(selected_with_idx)
+        raw_entities = self._spacy_extract_all(chunks, nlp)
 
+        # ── Stage 2: Dedup by lemma, rank by frequency ────────────────────
         if on_progress:
-            on_progress(2, 2)
+            on_progress(2, 3)
 
-        if not raw:
-            return ExtractionResult()
+        entities = self._dedup_and_rank(raw_entities, max_entities, min_frequency)
 
-        chunk_map = raw.get("_chunk_map", {})
+        # ── Stage 3: Type relations via LLM (or co-occurrence fallback) ───
+        if on_progress:
+            on_progress(3, 3)
 
-        # Parse and lemmatize
-        entities = self._parse_entities(raw.get("entities", []), chunk_map)
-        relations = self._parse_relations(raw.get("relations", []), entities, chunk_map)
+        if self._ai_client and entity_mode == "llm" and len(entities) >= 2:
+            relations = self._llm_type_relations(entities, chunks, max_relations)
+        else:
+            relations = self._cooccurrence_relations(entities, chunks, max_relations)
 
         return ExtractionResult(entities=entities, relations=relations)
 
-    def _llm_extract(self, chunks: list[tuple[int, TextChunk]]) -> dict | None:
-        """One LLM call to extract entities and relations from text.
+    # ── Stage 1: spaCy extraction ──────────────────────────────────────────
 
-        Chunks are passed as (original_index, chunk) pairs so we can track
-        which chunk each entity/relation came from.
+    def _spacy_extract_all(
+        self,
+        chunks: list[TextChunk],
+        nlp,
+    ) -> list[ExtractedEntity]:
+        """Run spaCy NER + noun phrase extraction across all chunks."""
+        # spaCy has a default max_length of 1,000,000 chars
+        # We process each chunk individually (chunks are ~400 tokens = ~1600 chars)
+        entities: list[ExtractedEntity] = []
+
+        for idx, chunk in enumerate(chunks):
+            text = chunk.content[:5000]  # safety cap per chunk
+            if len(text.strip()) < 10:
+                continue
+
+            try:
+                doc = nlp(text)
+            except Exception:
+                continue
+
+            # 1. Named entities (PER, ORG, LOC)
+            for ent in doc.ents:
+                name = ent.text.strip()
+                if len(name) < 3 or len(name) > 80:
+                    continue
+
+                label = ent.label_.upper()
+                entity_type = SPACY_LABEL_MAP.get(label)
+                if not entity_type:
+                    continue
+
+                # Skip if it's just a number or date
+                if name.replace("/", "").replace("-", "").replace(" ", "").isdigit():
+                    continue
+
+                entities.append(ExtractedEntity(
+                    name=name,
+                    type=entity_type,
+                    chunk_index=idx,
+                ))
+
+            # 2. Noun phrases → medical concepts
+            # noun_chunks in spaCy gives us NP boundaries
+            for np in doc.noun_chunks:
+                name = self._clean_noun_phrase(np.text)
+                if not name or len(name) < 3 or len(name) > 60:
+                    continue
+
+                # Skip generic terms
+                if name.lower() in GENERIC_TERMS:
+                    continue
+
+                # Skip if it's mostly stopwords
+                words = name.split()
+                if all(w.lower() in GENERIC_TERMS for w in words):
+                    continue
+
+                # Skip pure numbers
+                if name.replace("/", "").replace("-", "").replace(" ", "").isdigit():
+                    continue
+
+                entities.append(ExtractedEntity(
+                    name=name,
+                    type="CONCEPT",
+                    chunk_index=idx,
+                ))
+
+        return entities
+
+    def _clean_noun_phrase(self, text: str) -> str:
+        """Clean a noun phrase: strip leading articles/prepositions, normalize."""
+        words = text.strip().split()
+        if not words:
+            return ""
+
+        # Strip leading articles/prepositions
+        while words and words[0].lower() in LEADING_STRIP:
+            words.pop(0)
+
+        # Strip trailing prepositions/articles
+        while words and words[-1].lower() in LEADING_STRIP:
+            words.pop()
+
+        if not words:
+            return ""
+
+        name = " ".join(words)
+
+        # Skip if only one short word (likely noise)
+        if len(words) == 1 and len(words[0]) < 4:
+            return ""
+
+        # Capitalize first letter for display
+        name = name[0].upper() + name[1:] if name else name
+
+        return name
+
+    # ── Stage 2: Dedup and rank ────────────────────────────────────────────
+
+    def _dedup_and_rank(
+        self,
+        raw_entities: list[ExtractedEntity],
+        max_entities: int,
+        min_frequency: int,
+    ) -> list[ExtractedEntity]:
+        """Deduplicate by lemma, count frequency, return top N by frequency."""
+        # Group by canonical lemma key
+        lemma_groups: dict[str, list[ExtractedEntity]] = defaultdict(list)
+
+        for e in raw_entities:
+            lemma = _lemmatize(e.name)
+            e.lemma = lemma
+            key = _canonical_key(lemma)
+            lemma_groups[key].append(e)
+
+        # Build merged entities with frequency counts
+        merged: list[ExtractedEntity] = []
+        for key, group in lemma_groups.items():
+            # Pick the longest name as canonical display
+            best = max(group, key=lambda e: len(e.name))
+            # Count unique chunks
+            unique_chunks = set(e.chunk_index for e in group)
+            frequency = len(unique_chunks)
+
+            if frequency < min_frequency:
+                continue
+
+            # Use the most common type (PERSON/ORG/PLACE win over CONCEPT)
+            type_priority = {"PERSON": 3, "ORGANIZATION": 2, "PLACE": 2, "DISORDER": 1, "TECHNIQUE": 1, "PROTOCOL": 1, "CONCEPT": 0, "TERM": 0}
+            best_type = max(group, key=lambda e: type_priority.get(e.type, 0)).type
+
+            merged.append(ExtractedEntity(
+                name=best.name,
+                type=best_type,
+                description=best.description,
+                lemma=best.lemma,
+                chunk_index=best.chunk_index,
+                source_count=frequency,
+            ))
+
+        # Sort by frequency (desc), then by name length (desc for tie-break)
+        merged.sort(key=lambda e: (-e.source_count, -len(e.name)))
+
+        return merged[:max_entities]
+
+    # ── Stage 3a: LLM relation typing ──────────────────────────────────────
+
+    def _llm_type_relations(
+        self,
+        entities: list[ExtractedEntity],
+        chunks: list[TextChunk],
+        max_relations: int,
+    ) -> list[ExtractedRelation]:
+        """One LLM call to type relations between top entities.
+
+        Sends the entity list + representative context samples to the LLM,
+        asks it to identify TREATS/CAUSES/IS_A/PART_OF/RELATED_TO relations.
         """
-        # Build text with chunk markers so the LLM can reference them
-        parts = []
-        chunk_map = {}  # chunk_label → original_index
-        for i, (orig_idx, chunk) in enumerate(chunks[:8]):
-            label = f"[TRECHO {i}]"
-            chunk_map[label] = orig_idx
-            parts.append(f"{label}\n{chunk.content[:1000]}")
-        text = "\n\n".join(parts)
-        text = text[:6000]
+        # Take top 30 entities for the LLM (keep prompt manageable)
+        top_entities = entities[:30]
 
-        prompt = f"""Analise o texto abaixo (dividido em trechos) e extraia entidades e relações clínicas/acadêmicas relevantes.
+        # Build entity list for prompt
+        entity_lines = [f"- {e.name} ({e.type})" for e in top_entities]
+
+        # Sample context: pick chunks spread across the document
+        sample_chunks = self._sample_chunks(chunks, n=6, max_chars=600)
+        context = "\n\n".join(sample_chunks)
+
+        prompt = f"""Analise as entidades extraídas de um documento médico e identifique as relações semânticas entre elas.
+
+ENTIDADES (extraídas via NER do documento completo):
+{chr(10).join(entity_lines)}
+
+CONTEXTO (amostras representativas do documento):
+{context[:4000]}
+
+Para cada relação semântica clara entre as entidades listadas:
+- source: nome exato da entidade de origem (deve estar na lista acima)
+- target: nome exato da entidade de destino (deve estar na lista acima)
+- type: TREATS (trata), CAUSES (causa), IS_A (é um/tipo de), PART_OF (parte de), RELATED_TO (relacionado)
 
 IMPORTANTE:
-- IGNORE referências bibliográficas, citações, nomes de revistas, sobrenomes de autores de citations
-- IGNORE fragmentos como "American", "New", "Arch", "Jama", "Clin", "Med" — são de referências
-- Só extraia conceitos, técnicas, transtornos e relações que são parte do CONTEÚDO do texto
-- Não extraia nomes de autores de papers (ex: "Beck" como PERSON só se for discutido como teórico, não como citation)
-
-Para cada entidade, forneça:
-- name: nome canonical em português (singular)
-- type: CONCEPT, DISORDER, TECHNIQUE, PERSON, ORGANIZATION, PLACE, PROTOCOL
-- description: descrição curta (máx 10 palavras)
-- chunk: o número do trecho onde aparece (ex: 0, 1, 2)
-
-Para cada relação:
-- source: nome da entidade de origem
-- target: nome da entidade de destino
-- type: TREATS, CAUSES, IS_A, PART_OF, RELATED_TO
-- chunk: o número do trecho onde a relação aparece
-
-Máximo 20 entidades e 15 relações. Só inclua o que é claramente parte do conteúdo.
+- Só crie relações que fazem sentido clínico/acadêmico óbvio
+- Não invente relações entre entidades que não têm conexão clara
+- Máximo {max_relations} relações
+- Prefira relações tipadas (TREATS, CAUSES, IS_A, PART_OF) sobre RELATED_TO
 
 Retorne APENAS JSON:
-{{"entities":[{{"name":"TCC","type":"TECHNIQUE","description":"Terapia cognitivo-comportamental","chunk":0}}],"relations":[{{"source":"TCC","target":"Depressão","type":"TREATS","chunk":0}}]}}
-
-TEXTO:
-{text}"""
+{{"relations":[{{"source":"TCC","target":"Depressão","type":"TREATS"}}]}}
+"""
 
         try:
             response = self._ai_client.chat(
@@ -182,76 +380,39 @@ TEXTO:
             start = content.find("{")
             end = content.rfind("}")
             if start == -1 or end == -1:
-                return None
+                return self._cooccurrence_relations(entities, chunks, max_relations)
 
             parsed = json.loads(content[start:end + 1])
-            # Store chunk_map so _parse_entities/_parse_relations can use it
-            parsed["_chunk_map"] = chunk_map
-            return parsed
+            return self._parse_llm_relations(parsed, entities, max_relations)
+
         except Exception:
-            return None
+            return self._cooccurrence_relations(entities, chunks, max_relations)
 
-    def _parse_entities(self, raw_entities: list[dict], chunk_map: dict) -> list[ExtractedEntity]:
-        entities: list[ExtractedEntity] = []
-        seen: set[str] = set()
-
-        for item in raw_entities:
-            name = str(item.get("name", "")).strip()
-            entity_type = str(item.get("type", "CONCEPT")).strip().upper()
-            description = str(item.get("description", "")).strip()
-            chunk_label = str(item.get("chunk", "0")).strip()
-
-            if len(name) < 2:
-                continue
-            if entity_type not in ("CONCEPT", "DISORDER", "TECHNIQUE", "PERSON",
-                                    "ORGANIZATION", "PLACE", "PROTOCOL", "TERM"):
-                entity_type = "CONCEPT"
-
-            key = _canonical_key(name)
-            if key in seen:
-                continue
-            seen.add(key)
-
-            # Map chunk label to original chunk index
-            orig_chunk = chunk_map.get(f"[TRECHO {chunk_label}]", int(chunk_label) if chunk_label.isdigit() else 0)
-
-            lemma = _lemmatize(name)
-            entities.append(ExtractedEntity(
-                name=name[0].upper() + name[1:] if name else name,
-                type=entity_type,
-                description=description,
-                lemma=lemma,
-                chunk_index=orig_chunk,
-            ))
-
-        return entities[:20]
-
-    def _parse_relations(
+    def _parse_llm_relations(
         self,
-        raw_relations: list[dict],
+        parsed: dict,
         entities: list[ExtractedEntity],
-        chunk_map: dict,
+        max_relations: int,
     ) -> list[ExtractedRelation]:
-        # Map entity names (case-insensitive) for lookup
+        """Parse LLM response into ExtractedRelation objects."""
+        # Build lookup maps
         entity_map = {_normalize(e.name): e for e in entities}
-        # Also map by lemma for fuzzy matching
         lemma_map = {_normalize(e.lemma): e for e in entities if e.lemma}
 
         relations: list[ExtractedRelation] = []
         seen: set[str] = set()
 
-        for item in raw_relations:
+        for item in parsed.get("relations", []):
             src = str(item.get("source", "")).strip()
             tgt = str(item.get("target", "")).strip()
             rel_type = str(item.get("type", "RELATED_TO")).strip().upper()
-            chunk_label = str(item.get("chunk", "0")).strip()
 
             if not src or not tgt:
                 continue
             if rel_type not in ("TREATS", "CAUSES", "IS_A", "PART_OF", "RELATED_TO"):
                 rel_type = "RELATED_TO"
 
-            # Match source/target to known entities
+            # Match to known entities
             src_entity = entity_map.get(_normalize(src)) or lemma_map.get(_normalize(src))
             tgt_entity = entity_map.get(_normalize(tgt)) or lemma_map.get(_normalize(tgt))
 
@@ -277,14 +438,8 @@ TEXTO:
                 continue
             seen.add(key)
 
-            # LLM-extracted typed relations get high confidence.
-            # RELATED_TO is the weakest relation type (co-occurrence implied,
-            # not semantically typed) so it gets lower strength to avoid
-            # flooding the graph with noisy edges.
+            # LLM-typed relations get high confidence; RELATED_TO is weaker
             strength = 0.9 if rel_type != "RELATED_TO" else 0.3
-
-            # Map chunk label to original chunk index
-            orig_chunk = chunk_map.get(f"[TRECHO {chunk_label}]", int(chunk_label) if chunk_label.isdigit() else 0)
 
             relations.append(ExtractedRelation(
                 source_name=src_entity.name,
@@ -293,7 +448,81 @@ TEXTO:
                 target_type="CONCEPT",
                 relation_type=rel_type,
                 strength=strength,
-                chunk_index=orig_chunk,
+                chunk_index=src_entity.chunk_index,
             ))
 
-        return relations[:20]
+        return relations[:max_relations]
+
+    # ── Stage 3b: Co-occurrence fallback ───────────────────────────────────
+
+    def _cooccurrence_relations(
+        self,
+        entities: list[ExtractedEntity],
+        chunks: list[TextChunk],
+        max_relations: int,
+    ) -> list[ExtractedRelation]:
+        """Build co-occurrence relations (entities appearing in the same chunk).
+
+        This is the deterministic fallback when no LLM is available.
+        Uses a proximity window and requires co-occurrence in ≥2 chunks.
+        """
+        if len(entities) < 2:
+            return []
+
+        # Build entity → set of chunk indices map
+        entity_chunks: dict[str, set[int]] = defaultdict(set)
+        for e in entities:
+            entity_chunks[e.name].add(e.chunk_index)
+
+        # Find co-occurring pairs
+        relations: list[ExtractedRelation] = []
+        seen: set[str] = set()
+
+        top_entities = entities[:40]  # limit pairs to check
+
+        for i, e1 in enumerate(top_entities):
+            for e2 in top_entities[i + 1:]:
+                # Count shared chunks
+                shared = entity_chunks[e1.name] & entity_chunks[e2.name]
+                if len(shared) < 2:
+                    continue
+
+                key = f"{_canonical_key(e1.name)}|{_canonical_key(e2.name)}"
+                if key in seen:
+                    continue
+                seen.add(key)
+
+                # Strength scales with co-occurrence frequency
+                strength = min(0.4, 0.15 + len(shared) * 0.05)
+
+                relations.append(ExtractedRelation(
+                    source_name=e1.name,
+                    source_type="CONCEPT",
+                    target_name=e2.name,
+                    target_type="CONCEPT",
+                    relation_type="RELATED_TO",
+                    strength=strength,
+                    chunk_index=min(shared),
+                ))
+
+        # Sort by strength, take top N
+        relations.sort(key=lambda r: r.strength, reverse=True)
+        return relations[:max_relations]
+
+    # ── Helpers ────────────────────────────────────────────────────────────
+
+    def _sample_chunks(
+        self,
+        chunks: list[TextChunk],
+        n: int = 6,
+        max_chars: int = 800,
+    ) -> list[str]:
+        """Sample n chunks uniformly across the document for context."""
+        if len(chunks) <= n:
+            selected = chunks
+        else:
+            step = len(chunks) / n
+            indices = [int(i * step) for i in range(n)]
+            selected = [chunks[i] for i in indices if i < len(chunks)]
+
+        return [c.content[:max_chars] for c in selected if c.content.strip()]

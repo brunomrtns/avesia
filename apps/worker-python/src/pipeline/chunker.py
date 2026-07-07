@@ -25,6 +25,11 @@ class TextChunk:
 MARKDOWN_HEADING = re.compile(r"^(#{1,6})\s+(.+?)\s*#*$")
 HEURISTIC_HEADING = re.compile(r"^[A-ZÀ-Ý0-9][A-Za-zÀ-Ý0-9 \-:&/()]{2,80}$")
 
+# Patterns to detect and strip from section names
+TRAILING_PAGE_NUM = re.compile(r"\s+\d{1,4}$")  # "Sistema Cardiovascular 104"
+FIGURE_REF = re.compile(r"^(figura|fig\.?|tabela|tab\.?|quadro|imagem|gráfico)\s*\d", re.IGNORECASE)
+CAPITULO_REF = re.compile(r"^cap[ií]tulo\s+\d", re.IGNORECASE)
+
 # Token estimation: ~4 chars per token for Portuguese
 CHARS_PER_TOKEN = 4
 
@@ -108,6 +113,14 @@ def _split_into_sections(text: str) -> list[dict]:
                     "body": "\n".join(current_body),
                 })
 
+            # Clean heading text
+            heading_text = _clean_section_name(heading_text)
+
+            # Skip if heading became empty after cleaning (was just a figure ref, etc.)
+            if not heading_text:
+                current_body = []
+                continue
+
             # Update heading path
             while len(current_heading_path) >= heading_level:
                 current_heading_path.pop()
@@ -188,3 +201,31 @@ def _sliding_window(
         chunks.append(_make_chunk(text, section, chunk_idx, char_offset=char_offset))
 
     return chunks
+
+
+def _clean_section_name(name: str) -> str:
+    """Clean a section/heading name.
+
+    - Strips trailing page numbers ("Sistema Cardiovascular 104" → "Sistema Cardiovascular")
+    - Filters out figure/table references ("Figura 02: Deformidades dos joelhos")
+    - Filters out bare chapter references ("CAPÍTULO 5")
+    - Returns empty string if the heading should be skipped
+    """
+    name = name.strip()
+
+    # Skip figure/table/image references
+    if FIGURE_REF.match(name):
+        return ""
+
+    # Skip bare "CAPÍTULO N" references (keep if it has a real title after)
+    if CAPITULO_REF.match(name) and len(name.split()) <= 3:
+        return ""
+
+    # Strip trailing page numbers (e.g. "Sistema Cardiovascular 104" → "Sistema Cardiovascular")
+    name = TRAILING_PAGE_NUM.sub("", name).strip()
+
+    # Skip if it became too short after cleaning
+    if len(name) < 3:
+        return ""
+
+    return name

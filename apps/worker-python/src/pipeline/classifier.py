@@ -183,10 +183,15 @@ class Classifier:
         for i, cat in enumerate(cls._category_names):
             cls._category_vectors[cat] = cat_matrix[i]
 
-    def classify(self, content: str, max_input_chars: int = 12000) -> ClassificationResult:
+    def classify(self, content: str, max_input_chars: int = 100_000) -> ClassificationResult:
         from sklearn.metrics.pairwise import cosine_similarity
 
-        truncated = content[:max_input_chars]
+        # TF-IDF is cheap — process the full document (up to 100KB)
+        # For very large docs, sample uniformly across the text
+        if len(content) > max_input_chars:
+            truncated = self._uniform_sample(content, max_input_chars)
+        else:
+            truncated = content
 
         try:
             # Transform document
@@ -239,8 +244,11 @@ class Classifier:
         import numpy as np
 
         try:
+            # For large texts, sample for keyword extraction too
+            sample = text if len(text) <= 50_000 else self._uniform_sample(text, 50_000)
+
             # Get TF-IDF scores
-            doc_vec = self._vectorizer.transform([text])
+            doc_vec = self._vectorizer.transform([sample])
             feature_names = self._vectorizer.get_feature_names_out()
             scores = doc_vec.toarray()[0]
             if scores.max() == 0:
@@ -279,6 +287,18 @@ class Classifier:
             return [kw for kw, _ in tfidf_keywords[:n]]
         except Exception:
             return []
+
+    def _uniform_sample(self, text: str, max_chars: int) -> str:
+        """Sample text uniformly across the document to stay within max_chars."""
+        if len(text) <= max_chars:
+            return text
+        # Take chunks from beginning, middle, and end
+        third = max_chars // 3
+        beginning = text[:third]
+        mid_start = (len(text) - third) // 2
+        middle = text[mid_start:mid_start + third]
+        end = text[-third:]
+        return beginning + " " + middle + " " + end
 
     def _extract_themes(self, text: str, keywords: list[str]) -> list[str]:
         """Extract themes by matching against category keywords."""

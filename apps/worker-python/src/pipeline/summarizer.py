@@ -1,9 +1,15 @@
-"""Summarizer — TextRank extractive summarization using sumy.
+"""Summarizer — hierarchical TextRank extractive summarization using sumy.
+
+For large documents, the text is split into sections, each section is
+summarized independently, then the section summaries are combined and
+summarized again (hierarchical). This covers the full document instead
+of just the first 12KB.
 
 Deterministic (no LLM). Falls back to simple sentence selection if sumy
 is not available.
 """
 
+import re
 from dataclasses import dataclass
 
 
@@ -15,36 +21,108 @@ class SummarizerResult:
     tokens_used: int
 
 
+# Maximum chars per section for TextRank (sumy gets slow on very large inputs)
+SECTION_MAX_CHARS = 20_000
+# If document is smaller than this, summarize directly (no hierarchy)
+DIRECT_THRESHOLD = 15_000
+
+
 class Summarizer:
-    """TextRank-based extractive summarizer."""
+    """Hierarchical TextRank-based extractive summarizer."""
 
-    def summarize(self, content: str, max_input_chars: int = 12000) -> SummarizerResult:
-        truncated = content[:max_input_chars]
+    def summarize(self, content: str) -> SummarizerResult:
+        if not content or not content.strip():
+            return SummarizerResult(summary="", provider="textrank", model="sumy-textrank-v1", tokens_used=0)
 
-        try:
-            return self._sumy_textrank(truncated)
-        except Exception:
-            return self._fallback(truncated)
+        # For small documents, summarize directly
+        if len(content) <= DIRECT_THRESHOLD:
+            return self._sumy_textrank(content)
 
-    def _sumy_textrank(self, text: str) -> SummarizerResult:
+        # For large documents, use hierarchical summarization
+        return self._hierarchical_textrank(content)
+
+    def _hierarchical_textrank(self, text: str) -> SummarizerResult:
+        """Summarize large text by section, then combine and re-summarize."""
+        # Split into sections of ~SECTION_MAX_CHARS at sentence boundaries
+        sections = self._split_into_sections(text, SECTION_MAX_CHARS)
+
+        if not sections:
+            return self._fallback(text)
+
+        # Summarize each section
+        section_summaries: list[str] = []
+        for section in sections:
+            if len(section.strip()) < 200:
+                continue
+            result = self._sumy_textrank(section, sentence_count=2)
+            if result.summary.strip():
+                section_summaries.append(result.summary)
+
+        if not section_summaries:
+            return self._fallback(text)
+
+        # Combine section summaries and summarize again
+        combined = " ".join(section_summaries)
+
+        # If combined is still large, just pick from section summaries
+        if len(combined) > DIRECT_THRESHOLD:
+            # Pick the most informative section summaries (first N)
+            final = " ".join(section_summaries[:5])
+        else:
+            final_result = self._sumy_textrank(combined, sentence_count=5)
+            final = final_result.summary.strip() or " ".join(section_summaries[:5])
+
+        if not final.strip():
+            return self._fallback(text)
+
+        return SummarizerResult(
+            summary=final,
+            provider="textrank",
+            model="sumy-textrank-hierarchical-v1",
+            tokens_used=0,
+        )
+
+    def _split_into_sections(self, text: str, max_chars: int) -> list[str]:
+        """Split text into sections at sentence boundaries, each ≤ max_chars."""
+        sentences = re.split(r"(?<=[.!?])\s+(?=[A-ZÀ-Ý0-9])", text)
+        sections: list[str] = []
+        current: list[str] = []
+        current_len = 0
+
+        for sentence in sentences:
+            s_len = len(sentence)
+            if current_len + s_len > max_chars and current:
+                sections.append(" ".join(current))
+                current = []
+                current_len = 0
+            current.append(sentence)
+            current_len += s_len
+
+        if current:
+            sections.append(" ".join(current))
+
+        return sections
+
+    def _sumy_textrank(self, text: str, sentence_count: int | None = None) -> SummarizerResult:
         """Use sumy's TextRank summarizer."""
         from sumy.parsers.plaintext import PlaintextParser
         from sumy.nlp.tokenizers import Tokenizer
         from sumy.summarizers.text_rank import TextRankSummarizer
         from sumy.nlp.stemmers import null_stemmer
 
-        # sumy needs a language — we use "portuguese" if available
+        if sentence_count is None:
+            sentence_count = 3 if len(text) < 5000 else 5
+
         try:
             parser = PlaintextParser.from_string(text, Tokenizer("portuguese"))
         except Exception:
-            # Fallback: try with empty tokenizer
-            parser = PlaintextParser.from_string(text, Tokenizer("english"))
+            try:
+                parser = PlaintextParser.from_string(text, Tokenizer("english"))
+            except Exception:
+                return self._fallback(text)
 
         summarizer = TextRankSummarizer(stemmer=null_stemmer)
         summarizer.stop_words = _get_stopwords()
-
-        # Dynamic sentence count
-        sentence_count = 3 if len(text) < 5000 else 5
 
         sentences = summarizer(parser.document, sentence_count)
         summary = " ".join(str(s) for s in sentences)
@@ -60,11 +138,10 @@ class Summarizer:
         )
 
     def _fallback(self, text: str) -> SummarizerResult:
-        """Simple fallback: first few sentences."""
-        import re
-
+        """Simple fallback: first few meaningful sentences."""
         sentences = re.split(r"(?<=[.!?])\s+(?=[A-ZÀ-Ý0-9])", text)
-        selected = [s.strip() for s in sentences if len(s.strip()) > 20][:3]
+        # Skip very short sentences (likely page artifacts, headers)
+        selected = [s.strip() for s in sentences if len(s.strip()) > 40][:5]
         summary = " ".join(selected) if selected else text[:280].rsplit(" ", 1)[0] + "…"
 
         return SummarizerResult(

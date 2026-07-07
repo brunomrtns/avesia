@@ -33,6 +33,9 @@ def rag_index_task(self, *, knowledge_document_id: str, organization_id: str, st
             entity_mode=settings.kb_entity_mode,
             summary_mode=settings.kb_summary_mode,
             classify_mode=settings.kb_classify_mode,
+            max_entities=settings.kb_max_entities,
+            max_relations=settings.kb_max_relations,
+            min_entity_frequency=settings.kb_min_entity_frequency,
         )
 
         pipeline.run(PipelineInput(

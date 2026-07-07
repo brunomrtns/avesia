@@ -86,6 +86,9 @@ class DocumentPipeline:
         entity_mode: str = "ner",
         summary_mode: str = "textrank",
         classify_mode: str = "tfidf",
+        max_entities: int = 60,
+        max_relations: int = 30,
+        min_entity_frequency: int = 2,
     ):
         self._session = session
         self._ai = ai_client
@@ -94,6 +97,9 @@ class DocumentPipeline:
         self._entity_mode = entity_mode
         self._summary_mode = summary_mode
         self._classify_mode = classify_mode
+        self._max_entities = max_entities
+        self._max_relations = max_relations
+        self._min_entity_frequency = min_entity_frequency
 
         self._embedder = Embedder(ai_client)
         # Pass ai_client to entity extractor for LLM-based typed relations
@@ -227,7 +233,10 @@ class DocumentPipeline:
     def _stage_extract_entities(self, ctx: PipelineContext) -> None:
         result = self._entity_extractor.extract(
             ctx.chunks,
-            max_chunks=self._max_extraction_chunks,
+            max_entities=self._max_entities,
+            max_relations=self._max_relations,
+            min_frequency=self._min_entity_frequency,
+            entity_mode=self._entity_mode,
         )
         ctx.entities = result.entities
         ctx.relations = result.relations
@@ -236,14 +245,14 @@ class DocumentPipeline:
         if not ctx.knowledge_base_id:
             return
 
-        # Derive topics from themes + heading sections
+        # Derive topics from themes + cleaned heading sections
         topics: set[str] = set()
         for theme in ctx.themes:
             topics.add(theme)
         for chunk in ctx.chunks:
-            if chunk.section:
+            if chunk.section and len(chunk.section) > 3:
                 topics.add(chunk.section)
-        ctx.topics = list(topics)[:12]
+        ctx.topics = list(topics)[:15]
 
         self._graph_builder.build(
             self._session,
