@@ -255,12 +255,9 @@ class DocumentPipeline:
                 topics.add(chunk.section)
         ctx.topics = list(topics)[:15]
 
-        # Rollback any pending transaction to ensure clean session state
-        # (spaCy NER + LLM can take minutes, leaving session stale)
-        try:
-            self._session.rollback()
-        except Exception:
-            pass
+        # Expire all cached objects to ensure fresh DB state after long
+        # processing stages (spaCy NER + LLM can take minutes)
+        self._session.expire_all()
 
         self._graph_builder.build(
             self._session,
@@ -356,8 +353,10 @@ class DocumentPipeline:
     def _stage_finalize(self, ctx: PipelineContext, doc: KnowledgeDocument) -> None:
         import json
 
-        # Reload doc from DB (session may be stale after long stages)
-        self._session.rollback()
+        # Expire all cached objects to ensure fresh DB state
+        self._session.expire_all()
+
+        # Reload doc from DB
         doc = self._session.query(KnowledgeDocument).filter_by(
             id=ctx.input.knowledge_document_id
         ).first()
@@ -386,11 +385,8 @@ class DocumentPipeline:
         self, doc: KnowledgeDocument, stage: str, stage_index: int, status: str,
         ctx: PipelineContext, message: str = "",
     ) -> None:
-        # Rollback any pending failed transaction to ensure clean state
-        try:
-            self._session.rollback()
-        except Exception:
-            pass
+        # Expire all cached objects to ensure fresh DB state
+        self._session.expire_all()
 
         # Reload doc from DB to avoid stale object after long stages
         doc = self._session.query(KnowledgeDocument).filter_by(
