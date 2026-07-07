@@ -404,14 +404,28 @@ Retorne APENAS JSON:
             )
             content = response.content.strip()
 
+            # Log raw LLM response for debugging
+            import logging
+            logger = logging.getLogger(__name__)
+            logger.info("LLM relation typing response (first 500 chars): %s", content[:500])
+
             # Extract JSON from response
             start = content.find("{")
             end = content.rfind("}")
             if start == -1 or end == -1:
+                logger.warning("No JSON found in LLM response")
                 return self._cooccurrence_relations(entities, chunks, max_relations)
 
-            parsed = json.loads(content[start:end + 1])
+            json_str = content[start:end + 1]
+            try:
+                parsed = json.loads(json_str)
+            except json.JSONDecodeError as je:
+                logger.warning("JSON parse failed: %s. JSON: %s", je, json_str[:200])
+                return self._cooccurrence_relations(entities, chunks, max_relations)
+
             llm_relations = self._parse_llm_relations(parsed, entities, max_relations)
+            logger.info("LLM returned %d typed relations (from %d raw items)",
+                        len(llm_relations), len(parsed.get("relations", [])))
 
             # If LLM returned too few typed relations, supplement with co-occurrence
             if len(llm_relations) < 5:
@@ -425,7 +439,9 @@ Retorne APENAS JSON:
 
             return llm_relations
 
-        except Exception:
+        except Exception as e:
+            import logging
+            logging.getLogger(__name__).warning("LLM relation typing failed: %s", e)
             return self._cooccurrence_relations(entities, chunks, max_relations)
 
     def _parse_llm_relations(
