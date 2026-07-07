@@ -1,4 +1,4 @@
-import { useState, useMemo, useCallback, useRef } from 'react';
+import { useState, useMemo, useCallback } from 'react';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
 import {
@@ -19,6 +19,7 @@ import {
 } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
 import { Checkbox } from '@/components/ui/checkbox';
+import { Dropzone } from '@/components/ui/dropzone';
 import { Label } from '@/components/ui/label';
 import { Progress } from '@/components/ui/progress';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
@@ -60,11 +61,8 @@ export function ImportPatientsDialog({ open, onOpenChange }: ImportPatientsDialo
   const [skipHeader, setSkipHeader] = useState(true);
   const [columnMapping, setColumnMapping] = useState<Record<string, string>>({});
   const [result, setResult] = useState<PatientImportResult | null>(null);
-  const [isDragging, setIsDragging] = useState(false);
   const [fileText, setFileText] = useState<string | null>(null);
   const [previewCollapsed, setPreviewCollapsed] = useState(false);
-  const dragCounter = useRef(0);
-  const fileInputRef = useRef<HTMLInputElement>(null);
 
   // Parse preview
   const preview = useMemo(() => {
@@ -140,54 +138,6 @@ export function ImportPatientsDialog({ open, onOpenChange }: ImportPatientsDialo
     }
   }, []);
 
-  const handleFileSelect = useCallback(async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const selectedFile = e.target.files?.[0];
-    if (!selectedFile) return;
-    await processFile(selectedFile);
-    // Reset so the same file can be selected again later
-    e.target.value = '';
-  }, [processFile]);
-
-  const handleDrop = useCallback(async (e: React.DragEvent) => {
-    e.preventDefault();
-    e.stopPropagation();
-    dragCounter.current = 0;
-    setIsDragging(false);
-
-    const droppedFile = e.dataTransfer.files?.[0];
-    if (!droppedFile) return;
-
-    // Accept only CSV-like files
-    const isCsv = droppedFile.name.endsWith('.csv') || droppedFile.type === 'text/csv';
-    if (!isCsv) {
-      toast.error('Apenas arquivos CSV são suportados.');
-      return;
-    }
-
-    await processFile(droppedFile);
-  }, [processFile]);
-
-  const handleDragEnter = useCallback((e: React.DragEvent) => {
-    e.preventDefault();
-    e.stopPropagation();
-    dragCounter.current += 1;
-    setIsDragging(true);
-  }, []);
-
-  const handleDragLeave = useCallback((e: React.DragEvent) => {
-    e.preventDefault();
-    e.stopPropagation();
-    dragCounter.current -= 1;
-    if (dragCounter.current === 0) {
-      setIsDragging(false);
-    }
-  }, []);
-
-  const handleDragOver = useCallback((e: React.DragEvent) => {
-    e.preventDefault();
-    e.stopPropagation();
-  }, []);
-
   const handleReset = () => {
     setFile(null);
     setFileText(null);
@@ -210,33 +160,16 @@ export function ImportPatientsDialog({ open, onOpenChange }: ImportPatientsDialo
             <div className="space-y-2">
               <Label>Arquivo CSV</Label>
               {!file ? (
-                <div
-                  onDrop={handleDrop}
-                  onDragEnter={handleDragEnter}
-                  onDragLeave={handleDragLeave}
-                  onDragOver={handleDragOver}
-                  onClick={() => fileInputRef.current?.click()}
-                  className={cn(
-                    'flex flex-col items-center justify-center gap-2 rounded-lg border-2 border-dashed p-8 cursor-pointer transition-colors',
-                    isDragging
-                      ? 'border-primary bg-primary/10 scale-[1.01]'
-                      : 'border-border hover:border-primary/50',
-                  )}
-                >
-                  <FileUp className={cn('h-8 w-8 transition-colors', isDragging ? 'text-primary' : 'text-foreground-muted')} />
-                  <span className="text-sm text-foreground-secondary">
-                    {isDragging
-                      ? 'Solte o arquivo aqui'
-                      : 'Clique para selecionar ou arraste um arquivo .csv'}
-                  </span>
-                  <input
-                    ref={fileInputRef}
-                    type="file"
-                    accept=".csv,text/csv"
-                    className="hidden"
-                    onChange={handleFileSelect}
-                  />
-                </div>
+                <Dropzone
+                  onFile={processFile}
+                  onError={(msg) => toast.error(msg)}
+                  acceptedExtensions={['.csv']}
+                  acceptedMimes={['.csv', 'text/csv']}
+                  acceptedLabels={['CSV']}
+                  maxFileSizeMB={50}
+                  placeholder="Clique para selecionar ou arraste um arquivo .csv"
+                  className="p-8"
+                />
               ) : (
                 <div className="flex items-center justify-between rounded-lg border border-border bg-surface p-3">
                   <div className="flex items-center gap-2 min-w-0">
