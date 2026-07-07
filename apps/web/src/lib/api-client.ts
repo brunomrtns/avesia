@@ -572,7 +572,8 @@ export async function request<T>(path: string, options: RequestOptions = {}): Pr
       }
       const retryRes = await fetch(buildUrl(path, params), retryOptions);
       if (!retryRes.ok) {
-        throw new ApiError(retryRes.status, retryRes.statusText, await safeParseJson(retryRes));
+        const { message, body } = await extractErrorMessage(retryRes);
+        throw new ApiError(retryRes.status, message, body);
       }
       return (await retryRes.json()) as T;
     }
@@ -584,7 +585,8 @@ export async function request<T>(path: string, options: RequestOptions = {}): Pr
   }
 
   if (!res.ok) {
-    throw new ApiError(res.status, res.statusText, await safeParseJson(res));
+    const { message, body } = await extractErrorMessage(res);
+    throw new ApiError(res.status, message, body);
   }
 
   if (res.status === 204) {
@@ -600,6 +602,26 @@ async function safeParseJson(res: Response): Promise<unknown> {
   } catch {
     return null;
   }
+}
+
+/**
+ * Extracts a human-readable error message from a fetch Response.
+ * HTTP/2 responses have an empty `statusText`, so we must look at the body.
+ * The API returns errors as `{ error: { code, message } }`.
+ */
+async function extractErrorMessage(res: Response): Promise<{ message: string; body: unknown }> {
+  const body = await safeParseJson(res);
+  if (body !== null && typeof body === 'object') {
+    const errorObj = (body as Record<string, unknown>).error;
+    if (errorObj !== null && typeof errorObj === 'object') {
+      const msg = (errorObj as Record<string, unknown>).message;
+      if (typeof msg === 'string' && msg.length > 0) {
+        return { message: msg, body };
+      }
+    }
+  }
+  // Fallback to statusText (non-empty in HTTP/1.1) or a generic message
+  return { message: res.statusText || `Request failed (${res.status})`, body };
 }
 
 export const api = {
