@@ -267,6 +267,17 @@ class DocumentPipeline:
         self._community_detector.detect_and_persist(self._session, ctx.knowledge_base_id)
 
     def _stage_index_vectors(self, ctx: PipelineContext, doc: KnowledgeDocument) -> None:
+        # Expire all cached objects — the session may be stale after long
+        # processing stages (spaCy NER can take minutes)
+        self._session.expire_all()
+
+        # Reload doc from DB to get a fresh object
+        doc = self._session.query(KnowledgeDocument).filter_by(
+            id=ctx.input.knowledge_document_id
+        ).first()
+        if not doc:
+            raise ValueError(f"KnowledgeDocument not found: {ctx.input.knowledge_document_id}")
+
         # Create AIContextDocument if not exists
         if not doc.context_document_id:
             from ..utils import generate_id as cuid
@@ -285,27 +296,34 @@ class DocumentPipeline:
         else:
             ctx.context_document_id = doc.context_document_id
 
-        # Delete old chunks if any
-        self._session.query(AIContextChunk).filter_by(
-            document_id=ctx.context_document_id
-        ).delete()
+        # Delete old chunks using raw SQL for reliability
+        from sqlalchemy import text as sql_text
+        self._session.execute(
+            sql_text("DELETE FROM ai_context_chunks WHERE document_id = :doc_id"),
+            {"doc_id": ctx.context_document_id},
+        )
+        self._session.flush()
 
-        # Insert new chunks
+        # Insert new chunks in batches to avoid memory issues
         from ..utils import generate_id as cuid
 
-        for chunk in ctx.chunks:
-            db_chunk = AIContextChunk(
-                id=cuid(),
-                document_id=ctx.context_document_id,
-                content=chunk.content,
-                embedding=chunk.embedding,
-                section=chunk.section,
-                heading_path=chunk.heading_path,
-                page=chunk.page,
-                char_start=chunk.char_start,
-                char_end=chunk.char_end,
-            )
-            self._session.add(db_chunk)
+        batch_size = 50
+        for i in range(0, len(ctx.chunks), batch_size):
+            batch = ctx.chunks[i:i + batch_size]
+            for chunk in batch:
+                db_chunk = AIContextChunk(
+                    id=cuid(),
+                    document_id=ctx.context_document_id,
+                    content=chunk.content,
+                    embedding=chunk.embedding,
+                    section=chunk.section,
+                    heading_path=chunk.heading_path,
+                    page=chunk.page,
+                    char_start=chunk.char_start,
+                    char_end=chunk.char_end,
+                )
+                self._session.add(db_chunk)
+            self._session.flush()
 
         # Update context document status
         context_doc = self._session.query(AIContextDocument).filter_by(

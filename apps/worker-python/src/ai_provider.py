@@ -1,6 +1,8 @@
 """AI provider client — REST calls to NVIDIA NIM / OpenRouter / Ollama.
 
 Supports chat completions and embeddings via OpenAI-compatible API.
+Includes automatic retry with exponential backoff for transient errors
+(502, 503, 429, connection timeouts).
 """
 
 import time
@@ -10,6 +12,37 @@ from typing import Any
 import httpx
 
 from .config import get_settings
+
+# Retry config for transient HTTP errors
+RETRY_STATUS_CODES = {429, 502, 503, 504}
+MAX_RETRIES = 5
+INITIAL_BACKOFF = 2.0  # seconds
+
+
+def _retry_request(client: httpx.Client, method: str, url: str, **kwargs) -> httpx.Response:
+    """Execute an HTTP request with retry on transient errors."""
+    last_exc = None
+    for attempt in range(MAX_RETRIES):
+        try:
+            resp = client.request(method, url, **kwargs)
+            if resp.status_code in RETRY_STATUS_CODES and attempt < MAX_RETRIES - 1:
+                backoff = INITIAL_BACKOFF * (2 ** attempt)
+                time.sleep(backoff)
+                continue
+            resp.raise_for_status()
+            return resp
+        except (httpx.ConnectError, httpx.ReadTimeout, httpx.WriteTimeout,
+                httpx.PoolTimeout, httpx.RemoteProtocolError) as exc:
+            last_exc = exc
+            if attempt < MAX_RETRIES - 1:
+                backoff = INITIAL_BACKOFF * (2 ** attempt)
+                time.sleep(backoff)
+                continue
+            raise
+    # Should not reach here, but just in case
+    if last_exc:
+        raise last_exc
+    return resp  # type: ignore[possibly-undefined]
 
 
 @dataclass
@@ -94,9 +127,12 @@ class AIProviderClient:
         }
 
         start = time.monotonic()
-        resp = self._client.post(f"{self._base_url}/chat/completions", json=payload)
+        resp = _retry_request(
+            self._client, "POST",
+            f"{self._base_url}/chat/completions",
+            json=payload,
+        )
         latency_ms = int((time.monotonic() - start) * 1000)
-        resp.raise_for_status()
 
         data = resp.json()
         content = data["choices"][0]["message"]["content"]
@@ -139,8 +175,11 @@ class AIProviderClient:
             "encoding_format": "float",
         }
 
-        resp = self._client.post(f"{self._base_url}/embeddings", json=payload)
-        resp.raise_for_status()
+        resp = _retry_request(
+            self._client, "POST",
+            f"{self._base_url}/embeddings",
+            json=payload,
+        )
 
         data = resp.json()
         embedding = data["data"][0]["embedding"]

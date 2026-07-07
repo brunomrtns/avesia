@@ -113,17 +113,16 @@ GENERIC_TERMS = {
     "todos", "todas", "todo", "toda", "alguns", "algumas",
 }
 
-# Leading words to strip from noun phrases
-LEADING_STRIP = {
-    "o", "a", "os", "as", "um", "uma", "uns", "umas",
-    "de", "da", "do", "das", "dos", "d", "na", "no", "nas", "nos",
-    "em", "por", "para", "com", "sem", "sob", "sobre",
-    "que", "e", "ou", "mas", "pois", "como", "quando",
-    "seu", "sua", "seus", "suas", "meu", "minha", "nosso", "nossa",
-    "este", "esta", "estes", "estas", "esse", "essa", "esses", "essas",
-    "aquele", "aquela", "aqueles", "aquelas",
-    "qualquer", "todo", "toda", "cada",
-}
+# POS tags to strip from the beginning of noun phrases (language-agnostic)
+# DET = determiner (articles: o, a, the, a, an)
+# ADP = adposition (prepositions: de, em, in, on)
+# PRON = pronoun (este, esse, this, that)
+# CCONJ = coordinating conjunction (e, ou, and, or)
+# SCONJ = subordinating conjunction (que, because, if)
+# PART = particle
+LEADING_POS_STRIP = {"DET", "ADP", "PRON", "CCONJ", "SCONJ", "PART", "PUNCT"}
+# POS tags to strip from the end of noun phrases
+TRAILING_POS_STRIP = {"ADP", "PRON", "CCONJ", "SCONJ", "PART", "PUNCT"}
 
 
 class EntityExtractor:
@@ -220,7 +219,7 @@ class EntityExtractor:
             # 2. Noun phrases → medical concepts
             # noun_chunks in spaCy gives us NP boundaries
             for np in doc.noun_chunks:
-                name = self._clean_noun_phrase(np.text)
+                name = self._clean_noun_phrase(np)
                 if not name or len(name) < 3 or len(name) > 60:
                     continue
 
@@ -245,27 +244,33 @@ class EntityExtractor:
 
         return entities
 
-    def _clean_noun_phrase(self, text: str) -> str:
-        """Clean a noun phrase: strip leading articles/prepositions, normalize."""
-        words = text.strip().split()
-        if not words:
+    def _clean_noun_phrase(self, span) -> str:
+        """Clean a noun phrase using spaCy POS tags (language-agnostic).
+
+        Strips leading determiners, adpositions, pronouns, conjunctions
+        and trailing adpositions, pronouns, conjunctions, punctuation
+        by inspecting token.pos_ — works for any spaCy language model.
+        """
+        tokens = list(span)
+        if not tokens:
             return ""
 
-        # Strip leading articles/prepositions
-        while words and words[0].lower() in LEADING_STRIP:
-            words.pop(0)
+        # Strip leading tokens with non-content POS tags
+        while tokens and tokens[0].pos_ in LEADING_POS_STRIP:
+            tokens.pop(0)
 
-        # Strip trailing prepositions/articles
-        while words and words[-1].lower() in LEADING_STRIP:
-            words.pop()
+        # Strip trailing tokens with non-content POS tags
+        while tokens and tokens[-1].pos_ in TRAILING_POS_STRIP:
+            tokens.pop()
 
-        if not words:
+        if not tokens:
             return ""
 
-        name = " ".join(words)
+        # Build name from remaining token texts
+        name = " ".join(t.text for t in tokens).strip()
 
         # Skip if only one short word (likely noise)
-        if len(words) == 1 and len(words[0]) < 4:
+        if len(tokens) == 1 and len(tokens[0].text) < 4:
             return ""
 
         # Capitalize first letter for display
