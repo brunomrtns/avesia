@@ -113,6 +113,12 @@ GENERIC_TERMS = {
     # Pronouns/conjunctions that slip through
     "outro", "outros", "outra", "outras", "mesmo", "mesma", "cada",
     "todos", "todas", "todo", "toda", "alguns", "algumas",
+    # Generic connectors/non-content words
+    "além", "acordo", "fonte", "hora", "início", "meio", "maioria",
+    "além disso", "meio ambiente", "início do", "acordo com",
+    # Generic process words (not medical concepts)
+    "processo", "relação", "definição", "critério", "raciocínio",
+    "presença", "ausência", "necessidade", "possibilidade", "probabilidade",
 }
 
 # POS tags to strip from the beginning of noun phrases (language-agnostic)
@@ -211,6 +217,12 @@ class EntityExtractor:
                 # Skip if it's just a number or date
                 if name.replace("/", "").replace("-", "").replace(" ", "").isdigit():
                     continue
+
+                # Only trust PER/ORG for multi-word names (real names have
+                # first + last name). Single-word "PER" like "Anemia" or
+                # "Febre" are spaCy NER false positives — treat as CONCEPT.
+                if entity_type in ("PERSON", "ORGANIZATION") and len(name.split()) < 2:
+                    entity_type = "CONCEPT"
 
                 entities.append(ExtractedEntity(
                     name=name,
@@ -391,7 +403,19 @@ Retorne APENAS JSON:
                 return self._cooccurrence_relations(entities, chunks, max_relations)
 
             parsed = json.loads(content[start:end + 1])
-            return self._parse_llm_relations(parsed, entities, max_relations)
+            llm_relations = self._parse_llm_relations(parsed, entities, max_relations)
+
+            # If LLM returned too few typed relations, supplement with co-occurrence
+            if len(llm_relations) < 5:
+                cooccur = self._cooccurrence_relations(entities, chunks, max_relations)
+                # Merge: LLM relations first, then co-occurrence (dedup by pair)
+                seen_pairs = {(r.source_name, r.target_name) for r in llm_relations}
+                for r in cooccur:
+                    if (r.source_name, r.target_name) not in seen_pairs and (r.target_name, r.source_name) not in seen_pairs:
+                        llm_relations.append(r)
+                return llm_relations[:max_relations]
+
+            return llm_relations
 
         except Exception:
             return self._cooccurrence_relations(entities, chunks, max_relations)
