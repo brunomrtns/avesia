@@ -362,11 +362,11 @@ class EntityExtractor:
         Sends the entity list + representative context samples to the LLM,
         asks it to identify TREATS/CAUSES/IS_A/PART_OF/RELATED_TO relations.
         """
-        # Take top 30 entities for the LLM (keep prompt manageable)
-        top_entities = entities[:30]
+        # Take top 20 entities for the LLM (keep prompt + response manageable)
+        top_entities = entities[:20]
 
-        # Build entity list for prompt
-        entity_lines = [f"- {e.name} ({e.type})" for e in top_entities]
+        # Build entity list for prompt — use short names to keep response small
+        entity_lines = [f"- {e.name}" for e in top_entities]
 
         # Sample context: pick chunks spread across the document
         sample_chunks = self._sample_chunks(chunks, n=6, max_chars=600)
@@ -399,7 +399,7 @@ Retorne APENAS JSON:
             response = self._ai_client.chat(
                 messages=[{"role": "user", "content": prompt}],
                 model=None,
-                max_tokens=2000,
+                max_tokens=4000,
                 temperature=0.1,
             )
             content = response.content.strip()
@@ -419,9 +419,13 @@ Retorne APENAS JSON:
             json_str = content[start:end + 1]
             try:
                 parsed = json.loads(json_str)
-            except json.JSONDecodeError as je:
-                logger.warning("JSON parse failed: %s. JSON: %s", je, json_str[:200])
-                return self._cooccurrence_relations(entities, chunks, max_relations)
+            except json.JSONDecodeError:
+                # Try to repair truncated JSON by closing open brackets
+                logger.warning("JSON parse failed, attempting repair...")
+                parsed = self._repair_json(json_str)
+                if parsed is None:
+                    logger.warning("JSON repair also failed")
+                    return self._cooccurrence_relations(entities, chunks, max_relations)
 
             llm_relations = self._parse_llm_relations(parsed, entities, max_relations)
             logger.info("LLM returned %d typed relations (from %d raw items)",
@@ -443,6 +447,29 @@ Retorne APENAS JSON:
             import logging
             logging.getLogger(__name__).warning("LLM relation typing failed: %s", e)
             return self._cooccurrence_relations(entities, chunks, max_relations)
+
+    def _repair_json(self, json_str: str) -> dict | None:
+        """Attempt to repair truncated JSON from LLM responses.
+
+        Strategies:
+        1. Find the last complete object in the relations array
+        2. Close any open brackets/braces
+        """
+        # Find the last complete "},"  or "}" before end
+        # Try progressively shorter substrings
+        for i in range(len(json_str) - 1, 0, -1):
+            if json_str[i] == "}":
+                # Found a potential end of a complete object
+                candidate = json_str[:i + 1]
+                # Close the array and outer object
+                candidate += "]}"
+                try:
+                    parsed = json.loads(candidate)
+                    if "relations" in parsed:
+                        return parsed
+                except json.JSONDecodeError:
+                    continue
+        return None
 
     def _parse_llm_relations(
         self,
