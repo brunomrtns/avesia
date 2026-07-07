@@ -348,6 +348,14 @@ class DocumentPipeline:
     def _stage_finalize(self, ctx: PipelineContext, doc: KnowledgeDocument) -> None:
         import json
 
+        # Reload doc from DB (session may be stale after long stages)
+        self._session.rollback()
+        doc = self._session.query(KnowledgeDocument).filter_by(
+            id=ctx.input.knowledge_document_id
+        ).first()
+        if not doc:
+            raise ValueError(f"KnowledgeDocument not found: {ctx.input.knowledge_document_id}")
+
         doc.summary = ctx.summary
         doc.keywords = ctx.keywords
         doc.themes = ctx.themes
@@ -370,6 +378,19 @@ class DocumentPipeline:
         self, doc: KnowledgeDocument, stage: str, stage_index: int, status: str,
         ctx: PipelineContext, message: str = "",
     ) -> None:
+        # Rollback any pending failed transaction to ensure clean state
+        try:
+            self._session.rollback()
+        except Exception:
+            pass
+
+        # Reload doc from DB to avoid stale object after long stages
+        doc = self._session.query(KnowledgeDocument).filter_by(
+            id=ctx.input.knowledge_document_id
+        ).first()
+        if not doc:
+            return
+
         progress = int((stage_index / STAGE_TOTAL) * 100)
         if status == "completed":
             progress = int(((stage_index + 1) / STAGE_TOTAL) * 100)
