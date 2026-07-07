@@ -24,6 +24,7 @@ class ExtractedEntity:
     lemma: str = ""
     chunk_index: int = 0
     source_count: int = 1  # how many chunks mention this entity
+    chunk_indices: set = None  # all chunk indices where this entity appears
 
 
 @dataclass
@@ -84,15 +85,16 @@ def _canonical_key(name: str) -> str:
 
 
 # ── spaCy label → Avesia type mapping ────────────────────────────────────────
+# spaCy's Portuguese NER is not trained on medical text — it frequently
+# misclassifies medical terms (e.g. "Sepse" as PER, "Febre" as ORG).
+# We only trust PER and ORG labels; everything else becomes CONCEPT.
 
 SPACY_LABEL_MAP = {
     "PER": "PERSON",
     "PESSOA": "PERSON",
     "ORG": "ORGANIZATION",
     "ORGANIZACAO": "ORGANIZATION",
-    "LOC": "PLACE",
-    "LOCAL": "PLACE",
-    "MISC": "CONCEPT",
+    # LOC, MISC, and everything else → CONCEPT (safer for medical domain)
 }
 
 # Generic terms to filter out (not meaningful entities)
@@ -301,14 +303,14 @@ class EntityExtractor:
         for key, group in lemma_groups.items():
             # Pick the longest name as canonical display
             best = max(group, key=lambda e: len(e.name))
-            # Count unique chunks
+            # Collect ALL chunk indices where this entity appears
             unique_chunks = set(e.chunk_index for e in group)
             frequency = len(unique_chunks)
 
             if frequency < min_frequency:
                 continue
 
-            # Use the most common type (PERSON/ORG/PLACE win over CONCEPT)
+            # Use the most common type (PERSON/ORG win over CONCEPT)
             type_priority = {"PERSON": 3, "ORGANIZATION": 2, "PLACE": 2, "DISORDER": 1, "TECHNIQUE": 1, "PROTOCOL": 1, "CONCEPT": 0, "TERM": 0}
             best_type = max(group, key=lambda e: type_priority.get(e.type, 0)).type
 
@@ -319,6 +321,7 @@ class EntityExtractor:
                 lemma=best.lemma,
                 chunk_index=best.chunk_index,
                 source_count=frequency,
+                chunk_indices=unique_chunks,
             ))
 
         # Sort by frequency (desc), then by name length (desc for tie-break)
@@ -469,15 +472,18 @@ Retorne APENAS JSON:
         """Build co-occurrence relations (entities appearing in the same chunk).
 
         This is the deterministic fallback when no LLM is available.
-        Uses a proximity window and requires co-occurrence in ≥2 chunks.
+        Uses chunk_indices from dedup to find entities that co-occur.
         """
         if len(entities) < 2:
             return []
 
-        # Build entity → set of chunk indices map
-        entity_chunks: dict[str, set[int]] = defaultdict(set)
+        # Build entity → set of chunk indices map using chunk_indices from dedup
+        entity_chunks: dict[str, set[int]] = {}
         for e in entities:
-            entity_chunks[e.name].add(e.chunk_index)
+            if e.chunk_indices:
+                entity_chunks[e.name] = e.chunk_indices
+            else:
+                entity_chunks[e.name] = {e.chunk_index}
 
         # Find co-occurring pairs
         relations: list[ExtractedRelation] = []
@@ -488,8 +494,8 @@ Retorne APENAS JSON:
         for i, e1 in enumerate(top_entities):
             for e2 in top_entities[i + 1:]:
                 # Count shared chunks
-                shared = entity_chunks[e1.name] & entity_chunks[e2.name]
-                if len(shared) < 2:
+                shared = entity_chunks.get(e1.name, set()) & entity_chunks.get(e2.name, set())
+                if len(shared) < 1:
                     continue
 
                 key = f"{_canonical_key(e1.name)}|{_canonical_key(e2.name)}"

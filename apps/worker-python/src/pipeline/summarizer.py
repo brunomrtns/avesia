@@ -26,6 +26,15 @@ SECTION_MAX_CHARS = 20_000
 # If document is smaller than this, summarize directly (no hierarchy)
 DIRECT_THRESHOLD = 15_000
 
+# Patterns that indicate editorial/credit pages (not real content)
+EDITORIAL_INDICATORS = {
+    "editora chefe", "editora executiva", "assistente editorial",
+    "bibliotecária", "projeto gráfico", "diagramação", "revisor técnico",
+    "capa", "créditos", "ficha catalográfica", "catalogação",
+    "isbn", "copyright", "todos os direitos reservados",
+    "atena editora", "open access publication",
+}
+
 
 class Summarizer:
     """Hierarchical TextRank-based extractive summarizer."""
@@ -53,6 +62,9 @@ class Summarizer:
         section_summaries: list[str] = []
         for section in sections:
             if len(section.strip()) < 200:
+                continue
+            # Skip editorial/credit pages
+            if self._is_editorial(section):
                 continue
             result = self._sumy_textrank(section, sentence_count=2)
             if result.summary.strip():
@@ -102,6 +114,11 @@ class Summarizer:
             sections.append(" ".join(current))
 
         return sections
+
+    def _is_editorial(self, text: str) -> bool:
+        """Check if a text section is editorial/credit content (not real content)."""
+        lower = text[:500].lower()  # check first 500 chars
+        return any(indicator in lower for indicator in EDITORIAL_INDICATORS)
 
     def _sumy_textrank(self, text: str, sentence_count: int | None = None) -> SummarizerResult:
         """Use sumy's TextRank summarizer."""
