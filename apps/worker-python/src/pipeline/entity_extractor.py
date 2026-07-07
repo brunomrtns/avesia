@@ -203,7 +203,10 @@ class EntityExtractor:
             except Exception:
                 continue
 
-            # 1. Named entities (PER, ORG, LOC)
+            # 1. Named entities (PER, ORG) — only trust clearly multi-word
+            # proper names (all words capitalized, no digits/newlines).
+            # spaCy's Portuguese NER misclassifies medical terms as PER/ORG,
+            # so we filter aggressively.
             for ent in doc.ents:
                 name = ent.text.strip()
                 if len(name) < 3 or len(name) > 80:
@@ -218,11 +221,15 @@ class EntityExtractor:
                 if name.replace("/", "").replace("-", "").replace(" ", "").isdigit():
                     continue
 
-                # Only trust PER/ORG for multi-word names (real names have
-                # first + last name). Single-word "PER" like "Anemia" or
-                # "Febre" are spaCy NER false positives — treat as CONCEPT.
-                if entity_type in ("PERSON", "ORGANIZATION") and len(name.split()) < 2:
-                    entity_type = "CONCEPT"
+                # Skip if contains digits or newlines (not a proper name)
+                if any(c.isdigit() or c == "\n" for c in name):
+                    continue
+
+                # Only accept PER/ORG if ALL words start with uppercase
+                # (real proper names: "Maria Silva", "Hospital das Clínicas")
+                words = name.split()
+                if not all(w[0].isupper() for w in words if w):
+                    continue
 
                 entities.append(ExtractedEntity(
                     name=name,
