@@ -1,7 +1,8 @@
-import { useState, useRef } from 'react';
+import { useState, useRef, useCallback } from 'react';
 import * as DialogPrimitive from '@radix-ui/react-dialog';
-import { Upload, AlertCircle, FileText } from 'lucide-react';
+import { Upload, AlertCircle, FileText, FileUp, X } from 'lucide-react';
 import { buildApiUrl, getAccessToken } from '../../lib/api-client.js';
+import { cn } from '@/lib/utils';
 
 interface UploadDialogProps {
   open: boolean;
@@ -16,30 +17,86 @@ const ACCEPTED_TYPES = [
   { ext: '.md', label: 'Markdown', mime: 'text/markdown' },
 ];
 
+const ACCEPTED_EXTS = ACCEPTED_TYPES.map((t) => t.ext);
 const MAX_SIZE_MB = 50;
 
 export function UploadDialog({ open, onOpenChange, knowledgeBaseId }: UploadDialogProps) {
   const [file, setFile] = useState<File | null>(null);
   const [uploading, setUploading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [isDragging, setIsDragging] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
+  const dragCounter = useRef(0);
+
+  const validateFile = useCallback((f: File): string | null => {
+    if (f.size > MAX_SIZE_MB * 1024 * 1024) {
+      return `Arquivo muito grande. Máximo: ${MAX_SIZE_MB}MB`;
+    }
+
+    const ext = '.' + f.name.split('.').pop()?.toLowerCase();
+    if (!ACCEPTED_EXTS.includes(ext)) {
+      return `Formato não suportado. Use: ${ACCEPTED_TYPES.map((t) => t.label).join(', ')}`;
+    }
+
+    return null;
+  }, []);
 
   const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
     const f = e.target.files?.[0];
     if (!f) return;
 
-    if (f.size > MAX_SIZE_MB * 1024 * 1024) {
-      setError(`Arquivo muito grande. Máximo: ${MAX_SIZE_MB}MB`);
-      return;
-    }
-
-    const ext = '.' + f.name.split('.').pop()?.toLowerCase();
-    if (!ACCEPTED_TYPES.some((t) => t.ext === ext)) {
-      setError(`Formato não suportado. Use: ${ACCEPTED_TYPES.map((t) => t.label).join(', ')}`);
+    const validationError = validateFile(f);
+    if (validationError) {
+      setError(validationError);
       return;
     }
 
     setFile(f);
+    setError(null);
+  };
+
+  const handleDrop = useCallback((e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    dragCounter.current = 0;
+    setIsDragging(false);
+
+    const droppedFile = e.dataTransfer.files?.[0];
+    if (!droppedFile) return;
+
+    const validationError = validateFile(droppedFile);
+    if (validationError) {
+      setError(validationError);
+      return;
+    }
+
+    setFile(droppedFile);
+    setError(null);
+  }, [validateFile]);
+
+  const handleDragEnter = useCallback((e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    dragCounter.current += 1;
+    setIsDragging(true);
+  }, []);
+
+  const handleDragLeave = useCallback((e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    dragCounter.current -= 1;
+    if (dragCounter.current === 0) {
+      setIsDragging(false);
+    }
+  }, []);
+
+  const handleDragOver = useCallback((e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+  }, []);
+
+  const handleReset = () => {
+    setFile(null);
     setError(null);
   };
 
@@ -97,12 +154,9 @@ export function UploadDialog({ open, onOpenChange, knowledgeBaseId }: UploadDial
           <div className="space-y-4">
             <div>
               <label className="block text-sm text-slate-300 mb-1">Arquivo</label>
-              <div
-                onClick={() => inputRef.current?.click()}
-                className="flex items-center gap-3 px-3 py-4 border border-dashed border-gray-600 rounded-lg cursor-pointer hover:border-indigo-500 transition-colors"
-              >
-                {file ? (
-                  <>
+              {file ? (
+                <div className="flex items-center justify-between gap-3 px-3 py-4 border border-gray-700 rounded-lg bg-gray-800/50">
+                  <div className="flex items-center gap-3 min-w-0">
                     <FileText className="w-5 h-5 text-indigo-400 shrink-0" />
                     <div className="min-w-0">
                       <p className="text-sm text-white truncate">{file.name}</p>
@@ -110,23 +164,47 @@ export function UploadDialog({ open, onOpenChange, knowledgeBaseId }: UploadDial
                         {(file.size / 1024 / 1024).toFixed(1)}MB
                       </p>
                     </div>
-                  </>
-                ) : (
-                  <>
-                    <Upload className="w-5 h-5 text-slate-400 shrink-0" />
-                    <span className="text-sm text-slate-400">
-                      Clique para selecionar um arquivo...
-                    </span>
-                  </>
-                )}
-                <input
-                  ref={inputRef}
-                  type="file"
-                  accept={ACCEPTED_TYPES.map((t) => t.mime).join(',')}
-                  onChange={handleFileSelect}
-                  className="hidden"
-                />
-              </div>
+                  </div>
+                  <button
+                    onClick={handleReset}
+                    className="rounded-md p-1.5 text-slate-400 transition-colors hover:bg-gray-700 hover:text-white"
+                    aria-label="Remover arquivo"
+                  >
+                    <X className="w-4 h-4" />
+                  </button>
+                </div>
+              ) : (
+                <div
+                  onDrop={handleDrop}
+                  onDragEnter={handleDragEnter}
+                  onDragLeave={handleDragLeave}
+                  onDragOver={handleDragOver}
+                  onClick={() => inputRef.current?.click()}
+                  className={cn(
+                    'flex flex-col items-center justify-center gap-2 px-3 py-8 border-2 border-dashed rounded-lg cursor-pointer transition-all',
+                    isDragging
+                      ? 'border-indigo-500 bg-indigo-500/10 scale-[1.01]'
+                      : 'border-gray-600 hover:border-indigo-500',
+                  )}
+                >
+                  <FileUp className={cn('w-7 h-7 transition-colors', isDragging ? 'text-indigo-400' : 'text-slate-400')} />
+                  <span className="text-sm text-slate-400 text-center">
+                    {isDragging
+                      ? 'Solte o arquivo aqui'
+                      : 'Clique para selecionar ou arraste um arquivo'}
+                  </span>
+                  <span className="text-xs text-slate-600">
+                    PDF, DOCX, TXT, MD — até {MAX_SIZE_MB}MB
+                  </span>
+                  <input
+                    ref={inputRef}
+                    type="file"
+                    accept={ACCEPTED_TYPES.map((t) => t.mime).join(',')}
+                    onChange={handleFileSelect}
+                    className="hidden"
+                  />
+                </div>
+              )}
             </div>
 
             {error && (

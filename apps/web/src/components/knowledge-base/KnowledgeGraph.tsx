@@ -7,6 +7,8 @@ import {
   forceCollide,
   type SimulationNodeDatum,
 } from 'd3-force';
+import { Hand, MousePointer2, ZoomIn, ZoomOut, Maximize } from 'lucide-react';
+import { cn } from '@/lib/utils';
 
 interface KnowledgeGraphProps {
   nodes: Array<{
@@ -37,7 +39,6 @@ interface SimNode extends SimulationNodeDatum {
 }
 
 // ── Neural Calm palette for graph ──────────────────────────────────────────
-// Warm clinical colors that match the design system identity.
 const TYPE_COLORS: Record<string, string> = {
   topic: 'hsl(172, 70%, 42%)',      // primary teal
   concept: 'hsl(190, 65%, 45%)',    // lighter teal
@@ -81,12 +82,22 @@ function communityColor(community: number | null | undefined): string | null {
   return COMMUNITY_PALETTE[community % COMMUNITY_PALETTE.length] ?? 'hsl(190, 55%, 48%)';
 }
 
+const MIN_SCALE = 0.2;
+const MAX_SCALE = 4;
+const ZOOM_SENSITIVITY = 0.001;
+
 export function KnowledgeGraph({ nodes, edges, onNodeSelect, selectedNodeId }: KnowledgeGraphProps) {
   const svgRef = useRef<SVGSVGElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
   const [dimensions, setDimensions] = useState({ width: 800, height: 600 });
   const [hoveredNode, setHoveredNode] = useState<string | null>(null);
   const simRef = useRef<ReturnType<typeof forceSimulation<SimNode>> | null>(null);
+
+  // ── Pan & zoom state ──────────────────────────────────────────────────────
+  const [transform, setTransform] = useState({ x: 0, y: 0, scale: 1 });
+  const [panMode, setPanMode] = useState(false); // "hand" tool toggle
+  const isPanning = useRef(false);
+  const panStart = useRef({ x: 0, y: 0, tx: 0, ty: 0 });
 
   const updateDimensions = useCallback(() => {
     if (containerRef.current) {
@@ -150,6 +161,102 @@ export function KnowledgeGraph({ nodes, edges, onNodeSelect, selectedNodeId }: K
     return () => { sim.stop(); };
   }, [nodes, edges, dimensions]);
 
+  // ── Pan handlers ───────────────────────────────────────────────────────────
+  // Pan works in two ways:
+  // 1. Middle mouse button (button 1) drag — always available
+  // 2. Left-click drag when "hand" mode is active
+
+  const handleMouseDown = useCallback((e: React.MouseEvent<SVGSVGElement>) => {
+    const isMiddleButton = e.button === 1;
+    const isLeftWithPan = e.button === 0 && panMode;
+
+    if (isMiddleButton || isLeftWithPan) {
+      e.preventDefault();
+      isPanning.current = true;
+      panStart.current = {
+        x: e.clientX,
+        y: e.clientY,
+        tx: transform.x,
+        ty: transform.y,
+      };
+    }
+  }, [panMode, transform.x, transform.y]);
+
+  const handleMouseMove = useCallback((e: React.MouseEvent<SVGSVGElement>) => {
+    if (!isPanning.current) return;
+    e.preventDefault();
+    const dx = e.clientX - panStart.current.x;
+    const dy = e.clientY - panStart.current.y;
+    setTransform((prev) => ({ ...prev, x: panStart.current.tx + dx, y: panStart.current.ty + dy }));
+  }, []);
+
+  const handleMouseUp = useCallback((e: React.MouseEvent<SVGSVGElement>) => {
+    if (isPanning.current) {
+      e.preventDefault();
+      isPanning.current = false;
+    }
+  }, []);
+
+  const handleMouseLeave = useCallback(() => {
+    isPanning.current = false;
+  }, []);
+
+  // ── Zoom handler (wheel) ───────────────────────────────────────────────────
+  const handleWheel = useCallback((e: React.WheelEvent<SVGSVGElement>) => {
+    e.preventDefault();
+    const svg = svgRef.current;
+    if (!svg) return;
+
+    const rect = svg.getBoundingClientRect();
+    const mouseX = e.clientX - rect.left;
+    const mouseY = e.clientY - rect.top;
+
+    setTransform((prev) => {
+      const delta = -e.deltaY * ZOOM_SENSITIVITY;
+      const newScale = Math.min(MAX_SCALE, Math.max(MIN_SCALE, prev.scale * (1 + delta)));
+      const scaleRatio = newScale / prev.scale;
+
+      // Zoom toward cursor position
+      const newX = mouseX - (mouseX - prev.x) * scaleRatio;
+      const newY = mouseY - (mouseY - prev.y) * scaleRatio;
+
+      return { x: newX, y: newY, scale: newScale };
+    });
+  }, []);
+
+  // ── Zoom buttons ───────────────────────────────────────────────────────────
+  const zoomIn = useCallback(() => {
+    setTransform((prev) => {
+      const newScale = Math.min(MAX_SCALE, prev.scale * 1.3);
+      const cx = dimensions.width / 2;
+      const cy = dimensions.height / 2;
+      const scaleRatio = newScale / prev.scale;
+      return {
+        x: cx - (cx - prev.x) * scaleRatio,
+        y: cy - (cy - prev.y) * scaleRatio,
+        scale: newScale,
+      };
+    });
+  }, [dimensions]);
+
+  const zoomOut = useCallback(() => {
+    setTransform((prev) => {
+      const newScale = Math.max(MIN_SCALE, prev.scale / 1.3);
+      const cx = dimensions.width / 2;
+      const cy = dimensions.height / 2;
+      const scaleRatio = newScale / prev.scale;
+      return {
+        x: cx - (cx - prev.x) * scaleRatio,
+        y: cy - (cy - prev.y) * scaleRatio,
+        scale: newScale,
+      };
+    });
+  }, [dimensions]);
+
+  const resetView = useCallback(() => {
+    setTransform({ x: 0, y: 0, scale: 1 });
+  }, []);
+
   return (
     <div
       ref={containerRef}
@@ -158,7 +265,18 @@ export function KnowledgeGraph({ nodes, edges, onNodeSelect, selectedNodeId }: K
       {/* Ambient glow — top */}
       <div className="pointer-events-none absolute inset-x-0 top-0 h-32 bg-gradient-glow opacity-40" />
 
-      <svg ref={svgRef} width={dimensions.width} height={dimensions.height} className="relative w-full h-full">
+      <svg
+        ref={svgRef}
+        width={dimensions.width}
+        height={dimensions.height}
+        className="relative w-full h-full select-none"
+        style={{ cursor: panMode ? (isPanning.current ? 'grabbing' : 'grab') : 'default' }}
+        onMouseDown={handleMouseDown}
+        onMouseMove={handleMouseMove}
+        onMouseUp={handleMouseUp}
+        onMouseLeave={handleMouseLeave}
+        onWheel={handleWheel}
+      >
         <defs>
           {/* Glow filter for selected nodes */}
           <filter id="node-glow" x="-50%" y="-50%" width="200%" height="200%">
@@ -178,7 +296,7 @@ export function KnowledgeGraph({ nodes, edges, onNodeSelect, selectedNodeId }: K
           </filter>
         </defs>
 
-        <g className="graph-content">
+        <g className="graph-content" transform={`translate(${transform.x},${transform.y}) scale(${transform.scale})`}>
           {/* Edges — neural connection lines */}
           {edges.map((edge) => {
             const isHighlighted = hoveredNode === edge.source || hoveredNode === edge.target;
@@ -212,11 +330,18 @@ export function KnowledgeGraph({ nodes, edges, onNodeSelect, selectedNodeId }: K
                 key={node.id}
                 className="node"
                 style={{
-                  cursor: 'pointer',
+                  cursor: panMode ? 'grab' : 'pointer',
                   opacity: isDimmed ? 0.3 : 1,
                   transition: 'opacity 0.2s',
                 }}
-                onClick={() => onNodeSelect(node.id, node.type)}
+                onClick={(e) => {
+                  // Don't select node if we just finished panning
+                  if (panMode) {
+                    e.stopPropagation();
+                    return;
+                  }
+                  onNodeSelect(node.id, node.type);
+                }}
                 onMouseEnter={() => setHoveredNode(node.id)}
                 onMouseLeave={() => setHoveredNode(null)}
               >
@@ -274,6 +399,60 @@ export function KnowledgeGraph({ nodes, edges, onNodeSelect, selectedNodeId }: K
         </div>
       )}
 
+      {/* ── Toolbar — top right ─────────────────────────────────────────────── */}
+      {nodes.length > 0 && (
+        <div className="absolute right-3 top-3 flex flex-col gap-1.5">
+          {/* Pan mode toggle */}
+          <button
+            onClick={() => setPanMode((v) => !v)}
+            className={cn(
+              'flex h-8 w-8 items-center justify-center rounded-md border backdrop-blur-sm transition-colors',
+              panMode
+                ? 'border-primary bg-primary/15 text-primary'
+                : 'border-border-subtle bg-surface/80 text-foreground-secondary hover:text-foreground hover:bg-surface-elevated',
+            )}
+            title={panMode ? 'Modo navegação (mão) ativo' : 'Ativar modo navegação (mão)'}
+            aria-label="Modo navegação"
+            aria-pressed={panMode}
+          >
+            {panMode ? <Hand className="h-4 w-4" /> : <MousePointer2 className="h-4 w-4" />}
+          </button>
+
+          {/* Zoom controls */}
+          <div className="flex flex-col gap-1 rounded-md border border-border-subtle bg-surface/80 p-1 backdrop-blur-sm">
+            <button
+              onClick={zoomIn}
+              className="flex h-7 w-7 items-center justify-center rounded text-foreground-secondary transition-colors hover:bg-surface-elevated hover:text-foreground"
+              title="Zoom +"
+              aria-label="Aumentar zoom"
+            >
+              <ZoomIn className="h-4 w-4" />
+            </button>
+            <span className="text-center font-mono text-[9px] tabular-nums text-foreground-muted">
+              {Math.round(transform.scale * 100)}%
+            </span>
+            <button
+              onClick={zoomOut}
+              className="flex h-7 w-7 items-center justify-center rounded text-foreground-secondary transition-colors hover:bg-surface-elevated hover:text-foreground"
+              title="Zoom −"
+              aria-label="Diminuir zoom"
+            >
+              <ZoomOut className="h-4 w-4" />
+            </button>
+          </div>
+
+          {/* Reset view */}
+          <button
+            onClick={resetView}
+            className="flex h-8 w-8 items-center justify-center rounded-md border border-border-subtle bg-surface/80 text-foreground-secondary backdrop-blur-sm transition-colors hover:bg-surface-elevated hover:text-foreground"
+            title="Resetar visualização"
+            aria-label="Resetar visualização"
+          >
+            <Maximize className="h-4 w-4" />
+          </button>
+        </div>
+      )}
+
       {/* Legend — refined, minimal */}
       <div className="absolute bottom-3 left-3 flex flex-wrap gap-3 rounded-md border border-border-subtle bg-surface/80 px-3 py-2 backdrop-blur-sm">
         <span className="flex items-center gap-1.5 text-[10px] text-foreground-secondary">
@@ -287,15 +466,18 @@ export function KnowledgeGraph({ nodes, edges, onNodeSelect, selectedNodeId }: K
         </span>
       </div>
 
-      {/* Node count — subtle, top right */}
+      {/* Hint — pan instructions */}
       {nodes.length > 0 && (
-        <div className="absolute right-3 top-3 flex items-center gap-1.5 rounded-md border border-border-subtle bg-surface/80 px-2.5 py-1.5 backdrop-blur-sm">
-          <div className="h-1.5 w-1.5 rounded-full bg-primary animate-ai-pulse" />
-          <span className="font-mono text-[10px] tabular-nums text-foreground-secondary">
-            {nodes.length} nós · {edges.length} conexões
+        <div className="absolute bottom-3 right-3 rounded-md border border-border-subtle bg-surface/80 px-2.5 py-1.5 backdrop-blur-sm">
+          <span className="text-[10px] text-foreground-muted">
+            {panMode
+              ? 'Arraste para navegar · scroll para zoom'
+              : 'Botão do meio ou 🖐 para navegar · scroll para zoom'}
           </span>
         </div>
       )}
+
+      {/* Node count — removed (toolbar took its place) */}
     </div>
   );
 }
