@@ -141,8 +141,11 @@ class EntityExtractor:
     Stage 3: One LLM call to type relations (if ai_client and entity_mode=llm)
     """
 
-    def __init__(self, ai_client=None):
+    def __init__(self, ai_client=None, use_ner: bool = False):
         self._ai_client = ai_client
+        # NER is disabled by default — spaCy's Portuguese NER misclassifies
+        # medical terms as PER/ORG. Enable only for non-medical domains.
+        self._use_ner = use_ner
 
     def extract(
         self,
@@ -203,39 +206,37 @@ class EntityExtractor:
             except Exception:
                 continue
 
-            # 1. Named entities (PER, ORG) — only trust clearly multi-word
-            # proper names (all words capitalized, no digits/newlines).
-            # spaCy's Portuguese NER misclassifies medical terms as PER/ORG,
-            # so we filter aggressively.
-            for ent in doc.ents:
-                name = ent.text.strip()
-                if len(name) < 3 or len(name) > 80:
-                    continue
+            # 1. Named entities (PER, ORG) — DISABLED for medical domain.
+            # spaCy's Portuguese NER is not trained on medical text and
+            # consistently misclassifies medical terms as PER (Anemia,
+            # Diagnóstico, Febre) or ORG (Clínica, Intensidade).
+            # We rely entirely on noun chunks (Stage 2) for concept extraction.
+            # NER is only enabled if KB_USE_NER=true (for non-medical domains).
+            if self._use_ner:
+                for ent in doc.ents:
+                    name = ent.text.strip()
+                    if len(name) < 3 or len(name) > 80:
+                        continue
 
-                label = ent.label_.upper()
-                entity_type = SPACY_LABEL_MAP.get(label)
-                if not entity_type:
-                    continue
+                    label = ent.label_.upper()
+                    entity_type = SPACY_LABEL_MAP.get(label)
+                    if not entity_type:
+                        continue
 
-                # Skip if it's just a number or date
-                if name.replace("/", "").replace("-", "").replace(" ", "").isdigit():
-                    continue
+                    # Skip if contains digits or newlines
+                    if any(c.isdigit() or c == "\n" for c in name):
+                        continue
 
-                # Skip if contains digits or newlines (not a proper name)
-                if any(c.isdigit() or c == "\n" for c in name):
-                    continue
+                    # Only accept PER/ORG if ALL words start with uppercase
+                    words = name.split()
+                    if not all(w[0].isupper() for w in words if w):
+                        continue
 
-                # Only accept PER/ORG if ALL words start with uppercase
-                # (real proper names: "Maria Silva", "Hospital das Clínicas")
-                words = name.split()
-                if not all(w[0].isupper() for w in words if w):
-                    continue
-
-                entities.append(ExtractedEntity(
-                    name=name,
-                    type=entity_type,
-                    chunk_index=idx,
-                ))
+                    entities.append(ExtractedEntity(
+                        name=name,
+                        type=entity_type,
+                        chunk_index=idx,
+                    ))
 
             # 2. Noun phrases → medical concepts
             # noun_chunks in spaCy gives us NP boundaries

@@ -89,6 +89,7 @@ class DocumentPipeline:
         max_entities: int = 60,
         max_relations: int = 30,
         min_entity_frequency: int = 2,
+        use_ner: bool = False,
     ):
         self._session = session
         self._ai = ai_client
@@ -103,7 +104,7 @@ class DocumentPipeline:
 
         self._embedder = Embedder(ai_client)
         # Pass ai_client to entity extractor for LLM-based typed relations
-        self._entity_extractor = EntityExtractor(ai_client=ai_client)
+        self._entity_extractor = EntityExtractor(ai_client=ai_client, use_ner=use_ner)
         self._graph_builder = GraphBuilder()
         self._community_detector = CommunityDetector()
         self._summarizer = Summarizer()

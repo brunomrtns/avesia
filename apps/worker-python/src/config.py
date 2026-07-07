@@ -67,6 +67,7 @@ class Settings(BaseSettings):
     kb_entity_mode: Literal["ner", "llm"] = Field(default="ner", alias="KB_ENTITY_MODE")
     kb_summary_mode: Literal["textrank", "llm"] = Field(default="textrank", alias="KB_SUMMARY_MODE")
     kb_classify_mode: Literal["tfidf", "llm"] = Field(default="tfidf", alias="KB_CLASSIFY_MODE")
+    kb_use_ner: bool = Field(default=False, alias="KB_USE_NER")
 
     model_config = {"env_file": ".env", "extra": "ignore", "populate_by_name": True}
 
