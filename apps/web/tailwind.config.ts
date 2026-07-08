@@ -121,6 +121,28 @@ const config = {
             boxShadow: '0 0 0 8px hsl(var(--primary-glow) / 0)',
           },
         },
+        float: {
+          '0%, 100%': { transform: 'translateY(0)' },
+          '50%': { transform: 'translateY(-12px)' },
+        },
+        breathe: {
+          '0%, 100%': { transform: 'scale(1)', opacity: '0.6' },
+          '50%': { transform: 'scale(1.05)', opacity: '1' },
+        },
+        drift: {
+          '0%, 100%': { transform: 'translate(0, 0)' },
+          '25%': { transform: 'translate(30px, -20px)' },
+          '50%': { transform: 'translate(-20px, 20px)' },
+          '75%': { transform: 'translate(20px, 30px)' },
+        },
+        blink: {
+          '0%, 100%': { opacity: '1' },
+          '50%': { opacity: '0.2' },
+        },
+        'gradient-shift': {
+          '0%, 100%': { backgroundPosition: '0% 50%' },
+          '50%': { backgroundPosition: '100% 50%' },
+        },
       },
       animation: {
         'accordion-down': 'accordion-down 0.2s ease-out',
@@ -130,6 +152,11 @@ const config = {
         'scale-in': 'scale-in 0.2s ease-out',
         shimmer: 'shimmer 2s infinite',
         'ai-pulse': 'ai-pulse 2.5s ease-in-out infinite',
+        float: 'float 6s ease-in-out infinite',
+        breathe: 'breathe 12s ease-in-out infinite',
+        drift: 'drift 20s ease-in-out infinite',
+        blink: 'blink 2s ease-in-out infinite',
+        aurora: 'gradient-shift 15s ease-in-out infinite',
       },
       backgroundImage: {
         'gradient-primary': 'var(--gradient-primary)',

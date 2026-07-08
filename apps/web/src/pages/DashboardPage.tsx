@@ -38,6 +38,13 @@ import {
   TableRow,
 } from '@/components/ui/table';
 import { NeuralIndicator } from '@/components/ui/neural-indicator';
+import {
+  Counter,
+  MouseSpotlight,
+  Reveal,
+  Stagger,
+  StaggerItem,
+} from '@/components/animation/reveal';
 import { api } from '@/lib/api-client';
 import type { DashboardStats } from '@/lib/api-client';
 import { cn } from '@/lib/utils';
@@ -56,42 +63,44 @@ interface StatCardProps {
 
 function StatCard({ title, value, icon, accentClass, loading, trend, index }: StatCardProps) {
   return (
-    <motion.div
-      initial={{ opacity: 0, y: 12 }}
-      animate={{ opacity: 1, y: 0 }}
-      transition={{ duration: 0.35, delay: index * 0.06, ease: [0.16, 1, 0.3, 1] }}
-    >
-      <Card className="group relative overflow-hidden transition-all duration-300 hover:border-border-hover hover:shadow-md">
-        <div className={cn(
-          'absolute -right-12 -top-12 h-28 w-28 rounded-full opacity-0 blur-3xl transition-opacity duration-500 group-hover:opacity-20',
-          accentClass,
-        )} />
-        <CardContent className="relative p-5">
-          <div className="flex items-start justify-between">
-            <div className="space-y-1.5">
-              <p className="text-[11px] font-medium uppercase tracking-wider text-foreground-muted">{title}</p>
-              {loading ? (
-                <Skeleton className="h-8 w-16" />
-              ) : (
-                <p className="text-3xl font-bold tracking-tight text-foreground tabular-nums">{value}</p>
-              )}
-              {trend && !loading && (
-                <div className="flex items-center gap-1 text-xs text-success">
-                  <ArrowUpRight className="h-3 w-3" />
-                  {trend}
-                </div>
-              )}
+    <StaggerItem y={12} className="h-full">
+      <MouseSpotlight className="h-full">
+        <Card className="group relative h-full overflow-hidden transition-all duration-300 hover:border-border-hover hover:shadow-md">
+          <div className={cn(
+            'absolute -right-12 -top-12 h-28 w-28 rounded-full opacity-0 blur-3xl transition-opacity duration-500 group-hover:opacity-20',
+            accentClass,
+          )} />
+          <CardContent className="relative p-5">
+            <div className="flex items-start justify-between">
+              <div className="space-y-1.5">
+                <p className="text-[11px] font-medium uppercase tracking-wider text-foreground-muted">{title}</p>
+                {loading ? (
+                  <Skeleton className="h-8 w-16" />
+                ) : (
+                  <Counter
+                    value={String(value)}
+                    delay={index * 0.08}
+                    className="block text-3xl font-bold tracking-tight text-foreground tabular-nums"
+                  />
+                )}
+                {trend && !loading && (
+                  <div className="flex items-center gap-1 text-xs text-success">
+                    <ArrowUpRight className="h-3 w-3" />
+                    {trend}
+                  </div>
+                )}
+              </div>
+              <div className={cn(
+                'flex h-10 w-10 items-center justify-center rounded-lg border border-border-subtle transition-transform duration-300 group-hover:scale-110',
+                accentClass,
+              )}>
+                {icon}
+              </div>
             </div>
-            <div className={cn(
-              'flex h-10 w-10 items-center justify-center rounded-lg border border-border-subtle transition-transform duration-300 group-hover:scale-110',
-              accentClass,
-            )}>
-              {icon}
-            </div>
-          </div>
-        </CardContent>
-      </Card>
-    </motion.div>
+          </CardContent>
+        </Card>
+      </MouseSpotlight>
+    </StaggerItem>
   );
 }
 
@@ -131,7 +140,7 @@ function AIActivityCard({ stats }: { stats: DashboardStats | undefined }) {
   const totalTokens = stats?.aiAnalyses.totalTokensUsed ?? 0;
 
   return (
-    <Card className="relative overflow-hidden border-primary/15 bg-gradient-glow">
+    <Card className="relative overflow-hidden border-primary/15 bg-gradient-glow gradient-border-active">
       <div className="absolute inset-0 mesh-bg-dense opacity-40" />
 
       <CardContent className="relative space-y-4 p-5">
@@ -246,17 +255,12 @@ export function DashboardPage(): React.ReactNode {
   return (
     <div className="mx-auto max-w-7xl space-y-6">
       {/* Page header */}
-      <motion.div
-        initial={{ opacity: 0, y: 8 }}
-        animate={{ opacity: 1, y: 0 }}
-        transition={{ duration: 0.3, ease: [0.16, 1, 0.3, 1] }}
-        className="flex items-end justify-between"
-      >
+      <Reveal y={8} className="flex items-end justify-between">
         <div>
           <p className="mb-1 text-[11px] font-medium uppercase tracking-wider text-primary/70">
             {format(new Date(), "EEEE", { locale: ptBR })}
           </p>
-          <h1 className="text-2xl font-bold tracking-tight text-foreground">
+          <h1 className="text-balance text-2xl font-bold tracking-tight text-foreground">
             {format(new Date(), "d 'de' MMMM", { locale: ptBR })}
           </h1>
         </div>
@@ -266,10 +270,10 @@ export function DashboardPage(): React.ReactNode {
             Nova Sessão
           </Link>
         </Button>
-      </motion.div>
+      </Reveal>
 
       {/* Stats grid — 6 cards with clinical metrics */}
-      <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6">
+      <Stagger stagger={0.06} className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6">
         <StatCard
           index={0}
           title="Pacientes"
@@ -319,10 +323,10 @@ export function DashboardPage(): React.ReactNode {
           accentClass="bg-accent/10"
           loading={loading}
         />
-      </div>
+      </Stagger>
 
       {/* Main grid: trend chart + AI activity */}
-      <div className="grid gap-3 lg:grid-cols-3">
+      <Reveal delay={0.1} className="grid gap-3 lg:grid-cols-3">
         {/* Sessions trend chart (last 30 days) */}
         <Card className="lg:col-span-2">
           <CardContent className="p-5">
@@ -398,10 +402,10 @@ export function DashboardPage(): React.ReactNode {
 
         {/* AI Activity — signature card */}
         <AIActivityCard stats={stats} />
-      </div>
+      </Reveal>
 
       {/* Secondary grid: sessions by type + recent AI analyses */}
-      <div className="grid gap-3 lg:grid-cols-3">
+      <Reveal delay={0.15} className="grid gap-3 lg:grid-cols-3">
         {/* Sessions by type — bar chart */}
         <Card className="lg:col-span-1">
           <CardContent className="p-5">
@@ -529,15 +533,16 @@ export function DashboardPage(): React.ReactNode {
             )}
           </CardContent>
         </Card>
-      </div>
+      </Reveal>
 
       {/* Recent sessions table */}
-      <Card>
-        <CardContent className="p-5">
-          <div className="mb-4 flex items-center justify-between">
-            <div>
-              <h3 className="text-sm font-semibold tracking-tight text-foreground">Sessões Recentes</h3>
-              <p className="text-xs text-foreground-muted">Últimas sessões agendadas</p>
+      <Reveal delay={0.2}>
+        <Card>
+          <CardContent className="p-5">
+            <div className="mb-4 flex items-center justify-between">
+              <div>
+                <h3 className="text-sm font-semibold tracking-tight text-foreground">Sessões Recentes</h3>
+                <p className="text-xs text-foreground-muted">Últimas sessões agendadas</p>
             </div>
             <Button asChild variant="ghost" size="sm">
               <Link to={`/${orgSlug}/sessions`}>Ver todas</Link>
@@ -601,7 +606,8 @@ export function DashboardPage(): React.ReactNode {
             </Table>
           )}
         </CardContent>
-      </Card>
+        </Card>
+      </Reveal>
     </div>
   );
 }

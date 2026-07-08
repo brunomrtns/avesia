@@ -146,6 +146,9 @@ export function Layout(): ReactNode {
       <div className="min-h-screen bg-background mesh-bg">
         {/* Ambient glow — subtle top gradient */}
         <div className="pointer-events-none fixed inset-x-0 top-0 h-64 bg-gradient-glow opacity-60" />
+        {/* Ambient floating orbs — drift slowly for depth */}
+        <div className="pointer-events-none fixed -top-32 left-1/4 h-72 w-72 rounded-full bg-primary/[0.04] blur-3xl animate-drift" />
+        <div className="pointer-events-none fixed bottom-0 right-1/4 h-80 w-80 rounded-full bg-accent/[0.03] blur-3xl animate-drift" style={{ animationDelay: '5s' }} />
 
         {/* Mobile overlay */}
         <AnimatePresence>
@@ -160,10 +163,10 @@ export function Layout(): ReactNode {
           )}
         </AnimatePresence>
 
-        {/* Sidebar */}
+        {/* Sidebar — glass with warm blur */}
         <aside
           className={cn(
-            'fixed inset-y-0 left-0 z-50 flex flex-col border-r border-sidebar-border bg-sidebar transition-all duration-300 ease-out-expo lg:translate-x-0',
+            'fixed inset-y-0 left-0 z-50 flex flex-col border-r border-sidebar-border bg-sidebar/80 backdrop-blur-xl transition-all duration-300 ease-out-expo lg:translate-x-0',
             collapsed ? 'w-[var(--sidebar-collapsed-width)]' : 'w-[var(--sidebar-width)]',
             sidebarOpen ? 'translate-x-0' : '-translate-x-full',
           )}
@@ -347,10 +350,10 @@ export function Layout(): ReactNode {
             <AnimatePresence mode="wait">
               <motion.div
                 key={location.pathname}
-                initial={{ opacity: 0, y: 6 }}
-                animate={{ opacity: 1, y: 0 }}
-                exit={{ opacity: 0, y: -4 }}
-                transition={{ duration: 0.25, ease: [0.16, 1, 0.3, 1] }}
+                initial={{ opacity: 0, y: 12, filter: 'blur(8px)' }}
+                animate={{ opacity: 1, y: 0, filter: 'blur(0px)' }}
+                exit={{ opacity: 0, y: -8, filter: 'blur(4px)' }}
+                transition={{ duration: 0.4, ease: [0.16, 1, 0.3, 1] }}
               >
                 <Outlet />
               </motion.div>

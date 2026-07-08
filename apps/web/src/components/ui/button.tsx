@@ -7,6 +7,7 @@ import { cn } from '@/lib/utils';
 // ── Neural Calm Button ────────────────────────────────────────────────────
 // Refined with: warm depth, hairline borders, subtle inner light,
 // press feedback, and a gradient variant that uses the clinical teal.
+// The gradient variant has a shine sweep on hover for a premium CTA feel.
 // No generic library look — every variant has personality.
 
 const buttonVariants = cva(
@@ -32,9 +33,9 @@ const buttonVariants = cva(
         // Link — clinical teal
         link:
           'text-primary underline-offset-4 hover:underline hover:text-primary-hover',
-        // Gradient — the signature CTA, clinical teal gradient
+        // Gradient — the signature CTA, clinical teal gradient + shine sweep
         gradient:
-          'bg-gradient-primary text-white shadow-sm hover:shadow-glow hover:brightness-110',
+          'bg-gradient-primary text-white shadow-sm hover:shadow-glow hover:brightness-110 before:absolute before:inset-0 before:translate-x-[-150%] before:bg-gradient-to-r before:from-transparent before:via-white/20 before:to-transparent before:transition-transform before:duration-700 before:ease-out-expo hover:before:translate-x-[150%]',
         // Accent — warm amber for human-focused actions
         accent:
           'bg-accent text-accent-foreground shadow-sm hover:shadow-glow-accent hover:brightness-110',

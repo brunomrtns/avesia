@@ -5,13 +5,15 @@ import { cn } from '@/lib/utils';
 // ── Neural Calm Card ──────────────────────────────────────────────────────
 // Refined with: warm elevation, subtle inner light, hairline borders,
 // and a glass variant. Cards feel layered and warm, not flat or cold.
+// Add the `card-premium` class (or use <MouseSpotlight>) for the
+// mouse-tracking spotlight + shine sweep effect.
 
 export const Card = forwardRef<HTMLDivElement, HTMLAttributes<HTMLDivElement>>(
   ({ className, ...props }, ref) => (
     <div
       ref={ref}
       className={cn(
-        'rounded-lg border border-border bg-surface text-card-foreground shadow-sm transition-all duration-200 ease-out-expo',
+        'rounded-lg border border-border bg-surface text-card-foreground shadow-sm transition-all duration-300 ease-out-expo',
         className,
       )}
       {...props}

@@ -4,7 +4,6 @@ import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
 import { toast } from 'sonner';
-import { motion } from 'motion/react';
 import { Eye, EyeOff, Loader2, Sparkles } from 'lucide-react';
 
 import { useAuthStore } from '@/stores/auth-store';
@@ -14,6 +13,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { cn } from '@/lib/utils';
+import { Reveal, Magnetic } from '@/components/animation/reveal';
 
 const loginFormSchema = z.object({
   email: z.string().email('Email inválido'),
@@ -50,34 +50,31 @@ export function LoginPage(): React.ReactNode {
 
   return (
     <div className="relative flex min-h-screen items-center justify-center overflow-hidden bg-background px-4">
-      {/* Ambient glow background */}
+      {/* Cinematic background layers */}
+      <div className="pointer-events-none absolute inset-0 aurora-bg" />
+      <div className="pointer-events-none absolute inset-0 volumetric-light" />
+      <div className="pointer-events-none absolute inset-0 dot-grid opacity-40" />
+      <div className="pointer-events-none absolute inset-0 noise opacity-[0.04]" />
       <div className="pointer-events-none absolute inset-0 bg-gradient-glow" />
-      <div className="pointer-events-none absolute -top-40 left-1/2 h-80 w-80 -translate-x-1/2 rounded-full bg-primary/10 blur-3xl" />
-      <div className="pointer-events-none absolute bottom-0 right-0 h-96 w-96 rounded-full bg-accent/5 blur-3xl" />
-      <div className="pointer-events-none absolute inset-0 mesh-bg opacity-50" />
 
-      <motion.div
-        initial={{ opacity: 0, y: 20 }}
-        animate={{ opacity: 1, y: 0 }}
-        transition={{ duration: 0.5, ease: [0.16, 1, 0.3, 1] }}
-        className="relative w-full max-w-md"
-      >
+      {/* Floating ambient orbs */}
+      <div className="pointer-events-none absolute -top-24 left-[15%] h-72 w-72 animate-float rounded-full bg-primary/10 blur-3xl" />
+      <div className="pointer-events-none absolute bottom-[-10%] right-[12%] h-80 w-80 animate-drift rounded-full bg-accent/8 blur-3xl [animation-delay:1.5s]" />
+      <div className="pointer-events-none absolute top-1/3 right-[20%] h-56 w-56 animate-float rounded-full bg-primary/6 blur-3xl [animation-delay:0.8s]" />
+
+      <Reveal y={20} className="relative w-full max-w-md">
         {/* Branding */}
         <div className="mb-8 flex flex-col items-center text-center">
-          <motion.div
-            initial={{ scale: 0.8, opacity: 0 }}
-            animate={{ scale: 1, opacity: 1 }}
-            transition={{ duration: 0.5, delay: 0.1, ease: [0.34, 1.56, 0.64, 1] }}
-          >
+          <Reveal delay={0.1} y={12} scale blur>
             <BrandLogo variant="full" size="lg" />
-          </motion.div>
-          <p className="mt-3 text-sm text-foreground-secondary">
+          </Reveal>
+          <p className="mt-3 text-balance text-sm text-foreground-secondary">
             Plataforma de apoio clínico com IA
           </p>
         </div>
 
         {/* Login card */}
-        <div className="glass rounded-xl p-8 shadow-lg">
+        <div className="glass-card gradient-border-active elevation-accent rounded-xl p-8">
           <div className="mb-6">
             <h2 className="text-lg font-semibold text-foreground">Entrar na sua conta</h2>
             <p className="text-sm text-foreground-secondary">Insira suas credenciais para acessar</p>
@@ -125,31 +122,33 @@ export function LoginPage(): React.ReactNode {
               )}
             </div>
 
-            <Button
-              type="submit"
-              variant="gradient"
-              className="w-full"
-              disabled={isSubmitting}
-            >
-              {isSubmitting ? (
-                <>
-                  <Loader2 className="h-4 w-4 animate-spin" />
-                  Entrando...
-                </>
-              ) : (
-                <>
-                  <Sparkles className="h-4 w-4" />
-                  Entrar
-                </>
-              )}
-            </Button>
+            <Magnetic strength={0.25} className="w-full">
+              <Button
+                type="submit"
+                variant="gradient"
+                className="w-full"
+                disabled={isSubmitting}
+              >
+                {isSubmitting ? (
+                  <>
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                    Entrando...
+                  </>
+                ) : (
+                  <>
+                    <Sparkles className="h-4 w-4" />
+                    Entrar
+                  </>
+                )}
+              </Button>
+            </Magnetic>
           </form>
         </div>
 
         <p className="mt-6 text-center text-xs text-foreground-muted">
           © {new Date().getFullYear()} {BRAND.name}. Todos os direitos reservados.
         </p>
-      </motion.div>
+      </Reveal>
     </div>
   );
 }
