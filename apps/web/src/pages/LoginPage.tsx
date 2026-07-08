@@ -13,7 +13,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { cn } from '@/lib/utils';
-import { Reveal, Magnetic } from '@/components/animation/reveal';
+import { Reveal } from '@/components/animation/reveal';
 
 const loginFormSchema = z.object({
   email: z.string().email('Email inválido'),
@@ -122,26 +122,24 @@ export function LoginPage(): React.ReactNode {
               )}
             </div>
 
-            <Magnetic strength={0.25} className="w-full">
-              <Button
-                type="submit"
-                variant="gradient"
-                className="w-full"
-                disabled={isSubmitting}
-              >
-                {isSubmitting ? (
-                  <>
-                    <Loader2 className="h-4 w-4 animate-spin" />
-                    Entrando...
-                  </>
-                ) : (
-                  <>
-                    <Sparkles className="h-4 w-4" />
-                    Entrar
-                  </>
-                )}
-              </Button>
-            </Magnetic>
+            <Button
+              type="submit"
+              variant="gradient"
+              className="w-full"
+              disabled={isSubmitting}
+            >
+              {isSubmitting ? (
+                <>
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                  Entrando...
+                </>
+              ) : (
+                <>
+                  <Sparkles className="h-4 w-4" />
+                  Entrar
+                </>
+              )}
+            </Button>
           </form>
         </div>
 

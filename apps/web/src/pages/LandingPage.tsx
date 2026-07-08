@@ -25,7 +25,6 @@ import {
   StaggerItem,
   MouseSpotlight,
   ScrollProgress,
-  Magnetic,
   TextReveal,
   Counter,
   SectionTransition,
@@ -134,17 +133,15 @@ export function LandingPage(): React.ReactNode {
           >
             Entrar
           </Button>
-          <Magnetic strength={0.25}>
-            <Button
-              variant="gradient"
-              size="sm"
-              onClick={() => navigate('/login')}
-              className="gap-2"
-            >
-              <Sparkles className="h-3.5 w-3.5" />
-              Solicitar Demonstração
-            </Button>
-          </Magnetic>
+          <Button
+            variant="gradient"
+            size="sm"
+            onClick={() => navigate('/login')}
+            className="gap-2"
+          >
+            <Sparkles className="h-3.5 w-3.5" />
+            Solicitar Demonstração
+          </Button>
         </div>
       </nav>
 
@@ -178,28 +175,24 @@ export function LandingPage(): React.ReactNode {
 
           <Reveal delay={0.65} y={20} blur={false} scale={false}>
             <div className="mt-10 flex flex-col items-center justify-center gap-3 sm:flex-row">
-              <Magnetic strength={0.35}>
-                <Button
-                  variant="gradient"
-                  size="lg"
-                  onClick={() => navigate('/login')}
-                  className="gap-2 shadow-glow"
-                >
-                  <Sparkles className="h-4 w-4" />
-                  Começar agora
-                  <ArrowRight className="h-4 w-4" />
-                </Button>
-              </Magnetic>
-              <Magnetic strength={0.25}>
-                <Button
-                  variant="outline"
-                  size="lg"
-                  onClick={() => navigate('/login')}
-                  className="gap-2"
-                >
-                  Solicitar demonstração
-                </Button>
-              </Magnetic>
+              <Button
+                variant="gradient"
+                size="lg"
+                onClick={() => navigate('/login')}
+                className="gap-2 shadow-glow"
+              >
+                <Sparkles className="h-4 w-4" />
+                Começar agora
+                <ArrowRight className="h-4 w-4" />
+              </Button>
+              <Button
+                variant="outline"
+                size="lg"
+                onClick={() => navigate('/login')}
+                className="gap-2"
+              >
+                Solicitar demonstração
+              </Button>
             </div>
           </Reveal>
         </Reveal>
@@ -382,27 +375,23 @@ export function LandingPage(): React.ReactNode {
               Comece em minutos. Acesse o sistema e veja o {BRAND.name} em ação.
             </p>
             <div className="mt-8 flex flex-col items-center justify-center gap-3 sm:flex-row">
-              <Magnetic strength={0.35}>
-                <Button
-                  variant="gradient"
-                  size="lg"
-                  onClick={() => navigate('/login')}
-                  className="gap-2 shadow-glow"
-                >
-                  <Sparkles className="h-4 w-4" />
-                  Acessar o sistema
-                  <ArrowRight className="h-4 w-4" />
-                </Button>
-              </Magnetic>
-              <Magnetic strength={0.25}>
-                <Button
-                  variant="outline"
-                  size="lg"
-                  onClick={() => navigate('/login')}
-                >
-                  Solicitar demonstração
-                </Button>
-              </Magnetic>
+              <Button
+                variant="gradient"
+                size="lg"
+                onClick={() => navigate('/login')}
+                className="gap-2 shadow-glow"
+              >
+                <Sparkles className="h-4 w-4" />
+                Acessar o sistema
+                <ArrowRight className="h-4 w-4" />
+              </Button>
+              <Button
+                variant="outline"
+                size="lg"
+                onClick={() => navigate('/login')}
+              >
+                Solicitar demonstração
+              </Button>
             </div>
           </div>
         </Reveal>
