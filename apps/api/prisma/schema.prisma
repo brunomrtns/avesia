@@ -73,10 +73,12 @@ model User {
   organizationId String    @map("organization_id")
   email          String
   passwordHash   String    @map("password_hash")
-  /// Allowed values: OWNER | ADMIN | PROFESSIONAL
+  /// Allowed values: SUPER_ADMIN | OWNER | ADMIN | PROFESSIONAL
   role           String
   /// Allowed values: ACTIVE | DISABLED | INVITED
   status         String    @default("ACTIVE")
+  mustChangePassword Boolean @default(false) @map("must_change_password")
+  passwordChangedAt  DateTime? @map("password_changed_at")
   lastLoginAt    DateTime? @map("last_login_at")
   createdAt      DateTime  @default(now()) @map("created_at")
   updatedAt      DateTime  @updatedAt @map("updated_at")

@@ -26,6 +26,11 @@ export const refreshSchema = z.object({
   refreshToken: z.string().min(1),
 });
 
+export const changePasswordSchema = z.object({
+  currentPassword: z.string().min(1),
+  newPassword: passwordSchema,
+});
+
 export const createPatientSchema = z.object({
   name: z.string().min(1).max(300),
   email: emailSchema.optional(),
@@ -94,6 +99,7 @@ export const sessionListQuerySchema = paginationQuerySchema.extend({
 export type RegisterInput = z.infer<typeof registerSchema>;
 export type LoginInput = z.infer<typeof loginSchema>;
 export type RefreshInput = z.infer<typeof refreshSchema>;
+export type ChangePasswordInput = z.infer<typeof changePasswordSchema>;
 export type CreatePatientInput = z.infer<typeof createPatientSchema>;
 export type UpdatePatientInput = z.infer<typeof updatePatientSchema>;
 export type CreateSessionInput = z.infer<typeof createSessionSchema>;

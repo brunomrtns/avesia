@@ -16,6 +16,7 @@ interface AuthState {
   readonly isLoading: boolean;
   readonly isAuthenticated: boolean;
   readonly pendingTerms: readonly PendingTermsVersion[];
+  readonly mustChangePassword: boolean;
 
   // Actions
   init: () => Promise<void>;
@@ -23,6 +24,7 @@ interface AuthState {
   logout: () => void;
   updateOrgSlug: (slug: string, name?: string) => void;
   clearPendingTerms: () => void;
+  clearMustChangePassword: () => void;
 }
 
 export const useAuthStore = create<AuthState>((set) => ({
@@ -32,6 +34,7 @@ export const useAuthStore = create<AuthState>((set) => ({
   isLoading: true,
   isAuthenticated: false,
   pendingTerms: [],
+  mustChangePassword: false,
 
   init: async () => {
     const token = getRefreshToken();
@@ -55,7 +58,7 @@ export const useAuthStore = create<AuthState>((set) => ({
     } catch {
       setAccessToken(null);
       setRefreshToken(null);
-      set({ user: null, orgSlug: null, orgName: null, isAuthenticated: false, isLoading: false });
+      set({ user: null, orgSlug: null, orgName: null, isAuthenticated: false, isLoading: false, mustChangePassword: false });
     }
   },
 
@@ -69,6 +72,7 @@ export const useAuthStore = create<AuthState>((set) => ({
       orgName: res.organization?.name ?? null,
       isAuthenticated: res.user !== null,
       pendingTerms: res.pendingTerms ?? [],
+      mustChangePassword: res.mustChangePassword ?? false,
     });
   },
 
@@ -81,6 +85,7 @@ export const useAuthStore = create<AuthState>((set) => ({
       orgName: null,
       isAuthenticated: false,
       pendingTerms: [],
+      mustChangePassword: false,
     });
   },
 
@@ -89,4 +94,5 @@ export const useAuthStore = create<AuthState>((set) => ({
   },
 
   clearPendingTerms: () => set({ pendingTerms: [] }),
+  clearMustChangePassword: () => set({ mustChangePassword: false }),
 }));

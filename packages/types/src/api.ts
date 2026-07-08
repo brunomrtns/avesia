@@ -60,6 +60,7 @@ export interface LoginResponse {
   readonly organization: OrgInfo | null;
   readonly tokens: AuthTokens;
   readonly pendingTerms?: readonly PendingTermsVersion[];
+  readonly mustChangePassword?: boolean;
 }
 
 export interface RefreshRequest {

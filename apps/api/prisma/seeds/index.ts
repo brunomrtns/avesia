@@ -2,6 +2,7 @@ import { PrismaClient } from '@prisma/client';
 import { seedSpecialties } from './specialties.js';
 import { seedPermissions } from './permissions.js';
 import { seedDemoOrg } from './demo-org.js';
+import { seedSuperAdmin } from './super-admin.js';
 
 const prisma = new PrismaClient();
 
@@ -10,6 +11,7 @@ async function main(): Promise<void> {
 
   await seedSpecialties(prisma);
   await seedPermissions(prisma);
+  await seedSuperAdmin(prisma);
   await seedDemoOrg(prisma);
 
   console.log('\n✅  All seeds completed successfully!\n');

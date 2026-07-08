@@ -29,6 +29,12 @@ function buildOwnerPermissions(): PermissionSeed[] {
   );
 }
 
+function buildSuperAdminPermissions(): PermissionSeed[] {
+  return RESOURCES.flatMap((resource) =>
+    ACTIONS.map((action) => ({ role: 'SUPER_ADMIN', resource, action })),
+  );
+}
+
 function buildAdminPermissions(): PermissionSeed[] {
   const fullAccess: string[] = [
     'users',
@@ -74,6 +80,7 @@ function buildProfessionalPermissions(): PermissionSeed[] {
 }
 
 const permissions: PermissionSeed[] = [
+  ...buildSuperAdminPermissions(),
   ...buildOwnerPermissions(),
   ...buildAdminPermissions(),
   ...buildProfessionalPermissions(),

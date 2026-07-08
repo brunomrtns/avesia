@@ -19,12 +19,22 @@ import {
 import { api } from '@/lib/api-client';
 import { useAuthStore } from '@/stores/auth-store';
 import { Navigate, useParams } from 'react-router-dom';
+import { getChatModelsForProvider, getEmbeddingModelsForProvider } from '@/lib/nvidia-models';
 
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Badge } from '@/components/ui/badge';
+import {
+  Select,
+  SelectContent,
+  SelectGroup,
+  SelectItem,
+  SelectLabel,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select';
 import {
   Dialog,
   DialogContent,
@@ -77,8 +87,8 @@ export function AIProvidersPage(): React.ReactNode {
   const [editingProvider, setEditingProvider] = useState<AIProviderConfigDTO | null>(null);
   const [testingId, setTestingId] = useState<string | null>(null);
 
-  // Admin/owner only
-  if (user && user.role !== 'OWNER' && user.role !== 'ADMIN') {
+  // Admin/owner/super-admin only
+  if (user && user.role !== 'OWNER' && user.role !== 'ADMIN' && user.role !== 'SUPER_ADMIN') {
     const { orgSlug } = useParams<{ orgSlug: string }>();
     return <Navigate to={orgSlug ? `/${orgSlug}` : '/'} replace />;
   }
@@ -524,30 +534,98 @@ function ProviderDialog({
           {/* Model */}
           <div className="space-y-2">
             <Label htmlFor="provider-model">Modelo de chat</Label>
-            <Input
-              id="provider-model"
-              value={model}
-              onChange={(e) => setModel(e.target.value)}
-              placeholder={
-                provider === 'nvidia-nim'
-                  ? 'meta/llama-3.1-8b-instruct'
-                  : provider === 'openrouter'
-                    ? 'meta-llama/llama-3.3-70b-instruct'
-                    : 'gemma3:12b'
-              }
-              required
-            />
+            {getChatModelsForProvider(provider).length > 0 ? (
+              <>
+                <Select value={model} onValueChange={setModel}>
+                  <SelectTrigger id="provider-model">
+                    <SelectValue placeholder="Selecione um modelo" />
+                  </SelectTrigger>
+                  <SelectContent className="max-h-[300px]">
+                    <SelectGroup>
+                      <SelectLabel>Modelos disponíveis</SelectLabel>
+                      {getChatModelsForProvider(provider).map((m) => (
+                        <SelectItem key={m.id} value={m.id}>
+                          <div className="flex flex-col">
+                            <span className="flex items-center gap-2">
+                              {m.label}
+                              {m.recommended && (
+                                <span className="rounded bg-primary/10 px-1.5 py-0.5 text-[10px] font-medium text-primary">
+                                  Recomendado
+                                </span>
+                              )}
+                            </span>
+                            <span className="text-xs text-foreground-muted">{m.description}</span>
+                          </div>
+                        </SelectItem>
+                      ))}
+                    </SelectGroup>
+                  </SelectContent>
+                </Select>
+                <div className="flex items-center gap-2">
+                  <input
+                    id="provider-model-custom"
+                    type="text"
+                    value={model}
+                    onChange={(e) => setModel(e.target.value)}
+                    placeholder="Ou digite um modelo customizado"
+                    className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-sm transition-colors placeholder:text-foreground-muted focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+                  />
+                </div>
+                <p className="text-xs text-foreground-muted">
+                  Selecione da lista ou digite um modelo customizado. Contexto: {getChatModelsForProvider(provider).find((m) => m.id === model)?.contextWindow ?? 'N/A'}
+                </p>
+              </>
+            ) : (
+              <Input
+                id="provider-model"
+                value={model}
+                onChange={(e) => setModel(e.target.value)}
+                placeholder="Ex: llama3.1:8b"
+                required
+              />
+            )}
           </div>
 
           {/* Embedding Model */}
           <div className="space-y-2">
             <Label htmlFor="provider-embedding">Modelo de embeddings (opcional)</Label>
-            <Input
-              id="provider-embedding"
-              value={embeddingModel}
-              onChange={(e) => setEmbeddingModel(e.target.value)}
-              placeholder="nvidia/llama-nemotron-embed-1b-v2"
-            />
+            {getEmbeddingModelsForProvider(provider).length > 0 ? (
+              <>
+                <Select value={embeddingModel || '__none__'} onValueChange={(v) => setEmbeddingModel(v === '__none__' ? '' : v)}>
+                  <SelectTrigger id="provider-embedding">
+                    <SelectValue placeholder="Selecione um modelo de embeddings" />
+                  </SelectTrigger>
+                  <SelectContent className="max-h-[250px]">
+                    <SelectItem value="__none__">Nenhum (usar padrão do servidor)</SelectItem>
+                    <SelectGroup>
+                      <SelectLabel>Modelos de embedding</SelectLabel>
+                      {getEmbeddingModelsForProvider(provider).map((m) => (
+                        <SelectItem key={m.id} value={m.id}>
+                          <div className="flex flex-col">
+                            <span className="flex items-center gap-2">
+                              {m.label}
+                              {m.recommended && (
+                                <span className="rounded bg-primary/10 px-1.5 py-0.5 text-[10px] font-medium text-primary">
+                                  Recomendado
+                                </span>
+                              )}
+                            </span>
+                            <span className="text-xs text-foreground-muted">{m.description}</span>
+                          </div>
+                        </SelectItem>
+                      ))}
+                    </SelectGroup>
+                  </SelectContent>
+                </Select>
+              </>
+            ) : (
+              <Input
+                id="provider-embedding"
+                value={embeddingModel}
+                onChange={(e) => setEmbeddingModel(e.target.value)}
+                placeholder="nvidia/llama-nemotron-embed-1b-v2"
+              />
+            )}
             <p className="text-xs text-foreground-muted">
               Usado para gerar embeddings de documentos. Padrão do servidor se vazio.
             </p>

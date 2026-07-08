@@ -7,7 +7,7 @@ import {
   hashPassword,
   generateId,
 } from '@avesia/shared';
-import { loginSchema, registerSchema, refreshSchema } from '@avesia/shared';
+import { loginSchema, registerSchema, refreshSchema, changePasswordSchema } from '@avesia/shared';
 import { Role } from '@avesia/types';
 
 import { requireAuth } from '../plugins/auth.js';
@@ -96,6 +96,7 @@ const authRoutes: FastifyPluginAsync = async (app): Promise<void> => {
         : null,
       tokens,
       pendingTerms,
+      mustChangePassword: user.mustChangePassword,
     });
   });
 
@@ -264,6 +265,52 @@ const authRoutes: FastifyPluginAsync = async (app): Promise<void> => {
           ? { slug: user.organization.slug, name: user.organization.name }
           : null,
       };
+    },
+  );
+
+  // ── POST /auth/change-password ────────────────────────────────────────
+  app.post(
+    '/auth/change-password',
+    { onRequest: [requireAuth] },
+    async (request: FastifyRequest, reply) => {
+      const body = changePasswordSchema.parse(request.body);
+
+      const user = await app.prisma.user.findUnique({
+        where: { id: request.userId },
+      });
+
+      if (!user) {
+        throw new AuthError('User not found');
+      }
+
+      // Verify current password
+      const valid = await comparePassword(body.currentPassword, user.passwordHash);
+      if (!valid) {
+        throw new AuthError('Current password is incorrect');
+      }
+
+      // Hash new password and update
+      const newHash = await hashPassword(body.newPassword);
+      await app.prisma.user.update({
+        where: { id: user.id },
+        data: {
+          passwordHash: newHash,
+          mustChangePassword: false,
+          passwordChangedAt: new Date(),
+        },
+      });
+
+      void writeAuditLog(app.prisma, {
+        organizationId: user.organizationId,
+        userId: user.id,
+        action: 'UPDATE',
+        resource: 'users',
+        resourceId: user.id,
+        ipAddress: request.ip,
+        userAgent: request.headers['user-agent'] ?? '',
+      });
+
+      return reply.status(200).send({ success: true });
     },
   );
 

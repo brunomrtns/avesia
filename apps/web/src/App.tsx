@@ -47,6 +47,9 @@ const ProcessamentoPage = lazy(() =>
 const HelpPage = lazy(() =>
   import('@/pages/HelpPage').then((m) => ({ default: m.HelpPage })),
 );
+const AdminPage = lazy(() =>
+  import('@/pages/AdminPage').then((m) => ({ default: m.AdminPage })),
+);
 
 function PageLoader() {
   return (
@@ -175,6 +178,14 @@ export default function App(): React.ReactNode {
             element={
               <Suspense fallback={<PageLoader />}>
                 <HelpPage />
+              </Suspense>
+            }
+          />
+          <Route
+            path="admin"
+            element={
+              <Suspense fallback={<PageLoader />}>
+                <AdminPage />
               </Suspense>
             }
           />

@@ -15,6 +15,7 @@ import {
   Moon,
   Rocket,
   Settings,
+  Shield,
   Sun,
   Users,
   X,
@@ -45,6 +46,7 @@ import { useThemeStore } from '@/stores/theme-store';
 import { useUIStore } from '@/stores/ui-store';
 import { BrandLogo, BRAND } from '@/components/branding/BrandLogo';
 import { TermsAcceptanceDialog } from '@/components/terms/TermsAcceptanceDialog';
+import { ForcePasswordChangeDialog } from '@/components/auth/ForcePasswordChangeDialog';
 import { cn } from '@/lib/utils';
 
 interface NavItem {
@@ -69,6 +71,13 @@ const NAV_ITEMS: readonly NavItem[] = [
   { label: 'Configurações', path: 'settings', icon: <Settings className="h-[18px] w-[18px]" />, shortcut: 'G C' },
 ];
 
+const SUPER_ADMIN_NAV_ITEMS: readonly NavItem[] = [
+  { label: 'Dashboard', path: '', icon: <LayoutDashboard className="h-[18px] w-[18px]" />, shortcut: 'G D' },
+  { label: 'Administração', path: 'admin', icon: <Shield className="h-[18px] w-[18px]" />, shortcut: 'G A' },
+  { label: 'Provedores de IA', path: 'ai-providers', icon: <Cpu className="h-[18px] w-[18px]" />, shortcut: 'G I' },
+  { label: 'Configurações', path: 'settings', icon: <Settings className="h-[18px] w-[18px]" />, shortcut: 'G C' },
+];
+
 const PAGE_TITLES: Record<string, string> = {
   '': 'Dashboard',
   patients: 'Pacientes',
@@ -81,6 +90,7 @@ const PAGE_TITLES: Record<string, string> = {
   'api-keys': 'Chaves de API',
   help: 'Central de Ajuda',
   settings: 'Configurações',
+  admin: 'Administração',
 };
 
 // ── Avesia Logo is now centralized in @/components/branding/BrandLogo ──────
@@ -89,8 +99,10 @@ const PAGE_TITLES: Record<string, string> = {
 export function Layout(): ReactNode {
   const user = useAuthStore((s) => s.user);
   const pendingTerms = useAuthStore((s) => s.pendingTerms);
+  const mustChangePassword = useAuthStore((s) => s.mustChangePassword);
   const logout = useAuthStore((s) => s.logout);
   const clearPendingTerms = useAuthStore((s) => s.clearPendingTerms);
+  const clearMustChangePassword = useAuthStore((s) => s.clearMustChangePassword);
 
   const theme = useThemeStore((s) => s.theme);
   const toggleTheme = useThemeStore((s) => s.toggleTheme);
@@ -113,10 +125,13 @@ export function Layout(): ReactNode {
   const pathAfterSlug = location.pathname.replace(`/${orgSlug}`, '').replace(/^\//, '');
   const pageTitle = PAGE_TITLES[pathAfterSlug] ?? BRAND.name;
 
-  // Filter nav items by role — AI Providers and API Keys only for OWNER/ADMIN
-  const visibleNavItems = NAV_ITEMS.filter((item) => {
+  // SUPER_ADMIN gets a different nav set (admin panel instead of clinical features)
+  const baseNavItems = user?.role === 'SUPER_ADMIN' ? SUPER_ADMIN_NAV_ITEMS : NAV_ITEMS;
+
+  // Filter nav items by role — AI Providers and API Keys only for OWNER/ADMIN/SUPER_ADMIN
+  const visibleNavItems = baseNavItems.filter((item) => {
     if (item.path === 'ai-providers' || item.path === 'api-keys') {
-      return user?.role === 'OWNER' || user?.role === 'ADMIN';
+      return user?.role === 'OWNER' || user?.role === 'ADMIN' || user?.role === 'SUPER_ADMIN';
     }
     return true;
   });
@@ -395,8 +410,16 @@ export function Layout(): ReactNode {
           </CommandList>
         </CommandDialog>
 
+        {/* Force password change blocking dialog (takes priority over terms) */}
+        {mustChangePassword && (
+          <ForcePasswordChangeDialog
+            mustChangePassword={mustChangePassword}
+            onChanged={clearMustChangePassword}
+          />
+        )}
+
         {/* Terms acceptance blocking dialog */}
-        {pendingTerms.length > 0 && (
+        {pendingTerms.length > 0 && !mustChangePassword && (
           <TermsAcceptanceDialog
             pendingTerms={pendingTerms}
             onAccepted={clearPendingTerms}

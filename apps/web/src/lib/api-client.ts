@@ -634,6 +634,8 @@ export const api = {
         method: 'POST',
         body: { refreshToken: getRefreshToken() },
       }),
+    changePassword: (data: { currentPassword: string; newPassword: string }): Promise<{ success: boolean }> =>
+      request<{ success: boolean }>('/auth/change-password', { method: 'POST', body: data }),
   },
 
   patients: {
@@ -809,4 +811,53 @@ export const api = {
     revoke: (id: string): Promise<void> =>
       request<void>(`/api-keys/${id}`, { method: 'DELETE' }),
   },
+
+  admin: {
+    listOrganizations: (): Promise<{ organizations: AdminOrganization[] }> =>
+      request<{ organizations: AdminOrganization[] }>('/admin/organizations'),
+    createOrganization: (data: {
+      name: string;
+      slug?: string;
+      adminEmail: string;
+      adminName?: string;
+      adminPassword?: string;
+    }): Promise<{
+      organization: { id: string; name: string; slug: string; status: string };
+      adminUser: Record<string, unknown>;
+      tempPassword: string;
+    }> =>
+      request('/admin/organizations', { method: 'POST', body: data }),
+    listOrgUsers: (orgId: string): Promise<{ users: AdminUser[] }> =>
+      request<{ users: AdminUser[] }>(`/admin/organizations/${orgId}/users`),
+    createOrgUser: (orgId: string, data: {
+      email: string;
+      name?: string;
+      role: 'OWNER' | 'ADMIN' | 'PROFESSIONAL';
+      password?: string;
+    }): Promise<{ user: Record<string, unknown>; tempPassword: string }> =>
+      request(`/admin/organizations/${orgId}/users`, { method: 'POST', body: data }),
+    updateOrgStatus: (orgId: string, status: 'ACTIVE' | 'SUSPENDED'): Promise<Record<string, unknown>> =>
+      request(`/admin/organizations/${orgId}/status`, { method: 'PATCH', body: { status } }),
+  },
 };
+
+export interface AdminOrganization {
+  id: string;
+  name: string;
+  slug: string;
+  status: string;
+  createdAt: string;
+  userCount: number;
+  patientCount: number;
+  sessionCount: number;
+}
+
+export interface AdminUser {
+  id: string;
+  email: string;
+  role: string;
+  status: string;
+  mustChangePassword: boolean;
+  lastLoginAt: string | null;
+  createdAt: string;
+}

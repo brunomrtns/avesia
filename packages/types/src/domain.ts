@@ -51,6 +51,7 @@ export interface User extends Timestamped, SoftDeletable {
   readonly name: string;
   readonly role: Role;
   readonly lastLoginAt: ISODateString | null;
+  readonly mustChangePassword: boolean;
 }
 
 export interface Specialty extends Timestamped, TenantScoped {

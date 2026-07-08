@@ -12,8 +12,21 @@ export async function requireTenant(
   request: FastifyRequest,
   _reply: FastifyReply,
 ): Promise<void> {
+  // SUPER_ADMIN can operate without tenant context (cross-org operations)
+  if (request.role === Role.SUPER_ADMIN) {
+    return;
+  }
   if (!request.organizationId) {
     throw new TenantError('Organization context required');
+  }
+}
+
+export async function requireSuperAdmin(
+  request: FastifyRequest,
+  _reply: FastifyReply,
+): Promise<void> {
+  if (request.role !== Role.SUPER_ADMIN) {
+    throw new TenantError('Super admin access required');
   }
 }
 
@@ -28,7 +41,7 @@ export function requirePermission(
   return async (request: FastifyRequest, _reply: FastifyReply): Promise<void> => {
     const role = request.role;
 
-    if (role === Role.OWNER) {
+    if (role === Role.OWNER || role === Role.SUPER_ADMIN) {
       return;
     }
 
