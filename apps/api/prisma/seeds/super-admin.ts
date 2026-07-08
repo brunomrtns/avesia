@@ -1,8 +1,7 @@
 import type { PrismaClient } from '@prisma/client';
-import { hashPassword } from '@avesia/shared';
 
 const SUPER_ADMIN_ORG_SLUG = 'bruno-integrations';
-const SUPER_ADMIN_EMAIL = 'admin@brunointegrations.com';
+const SUPER_ADMIN_EMAIL = 'brunomartinsss@gmail.com';
 
 export async function seedSuperAdmin(prisma: PrismaClient): Promise<void> {
   console.log('🔐  Seeding super admin organization...');
@@ -26,31 +25,29 @@ export async function seedSuperAdmin(prisma: PrismaClient): Promise<void> {
   });
   console.log(`   ✓ Organization: ${org.name} (${org.slug})`);
 
-  const passwordHash = await hashPassword('Avesia@2025!');
-
-  const admin = await prisma.user.upsert({
+  // Promote existing user to SUPER_ADMIN (do not create new user or change password)
+  const existing = await prisma.user.findUnique({
     where: {
       organizationId_email: {
         organizationId: org.id,
         email: SUPER_ADMIN_EMAIL,
       },
     },
-    update: { role: 'SUPER_ADMIN' },
-    create: {
-      organizationId: org.id,
-      email: SUPER_ADMIN_EMAIL,
-      passwordHash,
-      role: 'SUPER_ADMIN',
-      status: 'ACTIVE',
-      mustChangePassword: true,
-    },
   });
-  console.log(`   ✓ Super admin user: ${admin.email}`);
-  console.log(`   ✓ Temp password: Avesia@2025! (must change on first login)`);
+
+  if (existing) {
+    await prisma.user.update({
+      where: { id: existing.id },
+      data: { role: 'SUPER_ADMIN' },
+    });
+    console.log(`   ✓ Promoted existing user to SUPER_ADMIN: ${existing.email}`);
+  } else {
+    console.log(`   ⚠ User ${SUPER_ADMIN_EMAIL} not found in org ${org.slug} — skipping promotion.`);
+    console.log(`     Create the user first via registration, then re-run seed.`);
+  }
 
   console.log('\n   ┌──────────────────────────────────────────────────────────┐');
-  console.log('   │  Super Admin login:                                     │');
-  console.log('   │  - admin@brunointegrations.com / Avesia@2025!            │');
-  console.log('   │  (will be forced to change password on first login)      │');
+  console.log('   │  Super Admin:                                           │');
+  console.log('   │  - brunomartinsss@gmail.com (SUPER_ADMIN)               │');
   console.log('   └──────────────────────────────────────────────────────────┘\n');
 }
