@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
@@ -25,6 +25,7 @@ type LoginFormValues = z.infer<typeof loginFormSchema>;
 export function LoginPage(): React.ReactNode {
   const login = useAuthStore((s) => s.login);
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
   const [showPassword, setShowPassword] = useState(false);
 
   const {
@@ -39,6 +40,15 @@ export function LoginPage(): React.ReactNode {
   const onSubmit = async (values: LoginFormValues): Promise<void> => {
     try {
       await login(values.email, values.password);
+
+      // Check for returnTo param (e.g. from Videoclip Generator redirect)
+      const returnTo = searchParams.get('returnTo');
+      if (returnTo && returnTo.startsWith('/') && !returnTo.startsWith('//')) {
+        // Only allow same-origin absolute paths (no protocol-relative URLs)
+        window.location.href = returnTo;
+        return;
+      }
+
       // Redirect to the org-scoped dashboard
       const slug = useAuthStore.getState().orgSlug ?? (await api.auth.me()).organization?.slug;
       navigate(slug ? `/${slug}` : '/', { replace: true });
