@@ -25,10 +25,10 @@ Avesia is a multi-tenant SaaS that helps mental health professionals (initially 
                ▼                                    ▼
 ┌──────────────────────────────────────────────────────────────────┐
 │                       API (apps/api, port 3100)                   │
-│  Fastify + Zod + JWT auth + Multi-tenant middleware + RBAC        │
+│  Fastify + Zod + BI Identity SSO + Multi-tenant middleware + RBAC    │
 │  ┌────────────┐ ┌────────────┐ ┌────────────┐ ┌────────────┐     │
 │  │   Auth     │ │   Org      │ │  Patients  │ │  Sessions  │ ... │
-│  │  Routes    │ │   Routes   │ │   Routes   │ │   Routes   │     │
+│  │  Plugin    │ │   Routes   │ │   Routes   │ │   Routes   │     │
 │  └────────────┘ └────────────┘ └────────────┘ └────────────┘     │
 └──────┬──────────────────┬─────────────────┬──────────────────────┘
        │                  │                 │
@@ -180,7 +180,7 @@ Patient    1───* Consent
 
 ### 4.3 Multi-Tenant Enforcement
 
-1. **App layer**: Prisma client extension reads `organizationId` from request context (set by JWT middleware) and auto-injects into all queries.
+1. **App layer**: Prisma client extension reads `organizationId` from request context (set by BI Identity SSO auth plugin) and auto-injects into all queries.
 2. **DB layer**: PostgreSQL RLS policies enforce `organization_id = current_setting('app.current_org')` at the row level.
 
 See [ADR-002](./decisions.md#adr-002) for rationale.
@@ -190,24 +190,28 @@ See [ADR-002](./decisions.md#adr-002) for rationale.
 ## 5. Auth Flow
 
 ```
-┌────────┐   POST /auth/register    ┌─────────┐
-│ Client │ ───────────────────────▶ │   API   │
-│        │ ◀────── access (15m) ─── │          │
-│        │ ◀────── refresh (7d) ─── │  (DB)    │
-└────────┘                          └─────────┘
+┌────────┐   GET /id/login (BI Identity)   ┌───────────────┐
+│ Client │ ──────────────────────────────▶ │  BI Identity  │
+│        │ ◀──── bi_auth cookie ───────── │  (Identity     │
+│        │                                │   Service)     │
+└────────┘                                └───────────────┘
 
-Access expired? ──▶ POST /auth/refresh ──▶ new access (old refresh rotated)
-                                              │
-                                              ▼
-                                      if old refresh reused
-                                              │
-                                              ▼
-                                    revoke entire family
+     │  bi_auth cookie
+     ▼
+┌─────────────────────────────────────────┐
+│  Avesia API (auth plugin)               │
+│  reads bi_auth cookie → validates via   │
+│  http://bi-api:3300/api/auth/check      │
+│  → find-or-create User by email (Prisma)│
+└─────────────────────────────────────────┘
 ```
 
-- Access token: JWT `{ sub, orgId, role, exp }`, 15min TTL
-- Refresh token: JWT with DB-stored hash, 7d TTL, rotated on each use
-- Web client: HttpOnly + Secure + SameSite=Lax cookies
+- Auth: BI Identity SSO (cookie-based). Reads `bi_auth` cookie, validates via Identity Service at `http://bi-api:3300/api/auth/check`.
+- Auth plugin: `apps/api/src/plugins/auth.ts` (getAuthUser, requireAuth, requireAdmin deps).
+- Local User is find-or-created by email match via Prisma.
+- No local login/register/refresh routes — login is at `/id/login` (BI Identity).
+- Environment variable: `BI_IDENTITY_URL` (not JWT_SECRET).
+- Frontend redirects to `/id/login?redirect=/avesia/dashboard` when not authenticated.
 
 See [ADR-006](./decisions.md#adr-006).
 
@@ -306,7 +310,7 @@ WebSocket events (channels: `org:{orgId}`, `session:{sessionId}`):
 
 ## 10. Security Posture
 
-- **Auth**: JWT + refresh rotation (ADR-006)
+- **Auth**: BI Identity SSO (cookie-based) (ADR-006)
 - **Passwords**: bcrypt (cost 12)
 - **Tenant isolation**: app filter + RLS (ADR-002)
 - **Input validation**: Zod at all boundaries (ADR-012)

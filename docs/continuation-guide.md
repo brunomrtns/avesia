@@ -22,9 +22,9 @@ Avesia is a production-grade clinical AI platform for psychologists. Multi-tenan
 │  Web App    │────▶│  Fastify API │────▶│  PostgreSQL 16   │
 │  (React 19) │     │  (Port 3100) │     │  (Port 5433)     │
 │  Port 3101  │     │              │     ├──────────────────┤
-└─────────────┘     │  JWT Auth    │     │  Redis 7         │
-       │            │  Multi-Tenant│     │  (Port 6380)     │
-       │            │  RBAC        │     ├──────────────────┤
+└─────────────┘     │  BI Identity │     │  Redis 7         │
+       │            │  SSO         │     │  (Port 6380)     │
+       │            │  Multi-Tenant│     ├──────────────────┤
        ▼            └──────┬───────┘     │  MinIO S3        │
 ┌─────────────┐            │             │  (Port 9100)     │
 │  Worker     │◀───────────┘             └──────────────────┘
@@ -46,7 +46,7 @@ Avesia is a production-grade clinical AI platform for psychologists. Multi-tenan
 | Language | TypeScript | 5.7 |
 | API | Fastify | 5.x |
 | ORM | Prisma | 6.x |
-| Auth | @fastify/jwt (dual namespaces) | 9.x |
+| Auth | BI Identity SSO (cookie-based, `bi_auth` cookie) | — |
 | Frontend | React + Vite | 19 / 6 |
 | Styling | Tailwind CSS + shadcn/ui | 3.x |
 | State | @tanstack/react-query | 5.x |
@@ -112,8 +112,8 @@ Avesia is a production-grade clinical AI platform for psychologists. Multi-tenan
 | `src/common.ts` | Brand<T,B>, branded IDs (14 types), PaginatedResponse, ISODateString, Timestamped, SoftDeletable, TenantScoped |
 | `src/enums.ts` | CONST OBJECTS (not enum): Role, SessionStatus, SessionType, SessionLocation, RecordingStatus, TranscriptStatus, PatientStatus, NoteStatus, AIAnalysisType, ConsentType, ConsentStatus, AuditAction, AttachmentKind |
 | `src/domain.ts` | 13 domain interfaces: Organization, User, Specialty, Professional, Patient, ClinicalSession, SessionRecording, Transcript, TranscriptSegment, ClinicalNote, AIAnalysis, Attachment, Consent, AuditLog |
-| `src/api.ts` | API DTOs: RegisterRequest/Response, LoginRequest/Response, RefreshRequest/Response, MeResponse, UpdateOrganizationRequest, CreatePatientRequest, UpdatePatientRequest, PatientListQuery, CreateSessionRequest, UpdateSessionRequest, SessionListQuery, etc. |
-| `src/auth.ts` | JwtPayload, AuthTokens, AuthContext |
+| `src/api.ts` | API DTOs: MeResponse, UpdateOrganizationRequest, CreatePatientRequest, UpdatePatientRequest, PatientListQuery, CreateSessionRequest, UpdateSessionRequest, SessionListQuery, etc. (login/register/refresh DTOs removed — handled by BI Identity) |
+| `src/auth.ts` | AuthContext (BI Identity SSO — JwtPayload/AuthTokens no longer used) |
 | `src/ai-provider.ts` | AI provider types |
 | `src/websocket.ts` | WebSocket event types |
 | `src/index.ts` | Barrel export |
@@ -122,7 +122,7 @@ Avesia is a production-grade clinical AI platform for psychologists. Multi-tenan
 
 | File | Purpose |
 |------|---------|
-| `src/constants.ts` | AppConstants (page sizes, token expiry, queue names), QUEUE_NAMES, WS_CHANNELS, PASSWORD_RULES |
+| `src/constants.ts` | AppConstants (page sizes, queue names), QUEUE_NAMES, WS_CHANNELS, PASSWORD_RULES (token expiry removed — BI Identity SSO) |
 | `src/errors.ts` | AppError hierarchy: AppError, ValidationError(400), AuthError(401), NotFoundError(404), ConflictError(409), TenantError(403), RateLimitError(429), AIProviderError(502) |
 | `src/result.ts` | Result<T,E> pattern |
 | `src/utils.ts` | generateId (cuid2), hashPassword/comparePassword (bcryptjs), formatISODate, safeJSONParse |
@@ -164,18 +164,18 @@ Avesia is a production-grade clinical AI platform for psychologists. Multi-tenan
 
 | File | Status | Purpose |
 |------|--------|---------|
-| `src/config/env.ts` | ✅ Done | Zod env validation (PORT=3100, HOST, DATABASE_URL, REDIS_URL, JWT secrets, MINIO, CORS) |
-| `src/plugins/auth.ts` | ✅ Done | authPlugin (dual @fastify/jwt namespaces), requireAuth preHandler |
+| `src/config/env.ts` | ✅ Done | Zod env validation (PORT=3100, HOST, DATABASE_URL, REDIS_URL, BI_IDENTITY_URL, MINIO, CORS) |
+| `src/plugins/auth.ts` | ✅ Done | authPlugin (BI Identity SSO: reads `bi_auth` cookie, validates via Identity Service, find-or-create User by email), getAuthUser/requireAuth/requireAdmin deps |
 | `src/plugins/tenant.ts` | ✅ Done | tenantPlugin, requireTenant, requirePermission({resource,action}) |
 | `src/plugins/prisma.ts` | ✅ Done | Decorates app.prisma |
 | `src/plugins/rate-limit.ts` | ✅ Done | 100 req/min (prod) / 1000 (dev) |
 | `src/plugins/error-handler.ts` | ✅ Done | Zod→400, AppError→mapped, Fastify validation→400, unknown→500 (hide in prod), 404 handler |
 | `src/types/fastify.d.ts` | ✅ Done | FastifyInstance + FastifyRequest type extensions |
-| `src/utils/jwt-utils.ts` | ✅ Done | signTokens, verifyAccessToken, verifyRefreshToken, hashToken (sha256) |
+| `src/utils/jwt-utils.ts` | ✅ Done | (legacy — no longer used; auth is BI Identity SSO) |
 | `src/utils/prisma-client.ts` | ✅ Done | Global singleton PrismaClient |
 | `src/utils/audit-log.ts` | ✅ Done | writeAuditLog function |
 | `src/server.ts` | ❌ **MISSING** | Fastify entry point: create app, register plugins + routes, listen |
-| `src/routes/auth.ts` | ❌ **MISSING** | POST /auth/login, POST /auth/register, POST /auth/refresh, GET /auth/me, POST /auth/logout |
+| `src/routes/auth.ts` | ❌ **REMOVED** | No local login/register/refresh routes — auth handled by BI Identity SSO at `/id/login` |
 | `src/routes/patients.ts` | ❌ **MISSING** | GET/POST /patients, GET/PATCH/DELETE /patients/:id |
 | `src/routes/sessions.ts` | ❌ **MISSING** | GET/POST /sessions, GET/PATCH /sessions/:id |
 | `src/routes/organization.ts` | ❌ **MISSING** | GET/PATCH /organization |
@@ -185,8 +185,8 @@ Avesia is a production-grade clinical AI platform for psychologists. Multi-tenan
 
 | File | Status | Purpose |
 |------|--------|---------|
-| `src/lib/api-client.ts` | ✅ Done | Full typed HTTP client with auto-refresh |
-| `src/lib/auth-context.tsx` | ✅ Done | AuthProvider, login/logout/refresh |
+| `src/lib/api-client.ts` | ✅ Done | Full typed HTTP client (cookie-based auth via BI Identity SSO) |
+| `src/lib/auth-context.tsx` | ✅ Done | AuthProvider (BI Identity SSO — redirects to `/id/login?redirect=/avesia/dashboard` when unauthenticated) |
 | `src/lib/query-client.ts` | ✅ Done | QueryClient with defaults |
 | `src/lib/utils.ts` | ✅ Done | cn() helper (clsx+twMerge) |
 | `src/components/ui/button.tsx` | ✅ Done | shadcn Button component |
@@ -264,7 +264,6 @@ import { authPlugin } from './plugins/auth.js'
 import { tenantPlugin } from './plugins/tenant.js'
 import { rateLimitPlugin } from './plugins/rate-limit.js'
 import { errorHandlerPlugin } from './plugins/error-handler.js'
-import authRoutes from './routes/auth.js'
 import patientRoutes from './routes/patients.js'
 import sessionRoutes from './routes/sessions.js'
 import organizationRoutes from './routes/organization.js'
@@ -280,7 +279,6 @@ import healthRoutes from './routes/health.js'
    - rateLimitPlugin
    - errorHandlerPlugin
 3. Register route modules with `app.register(routes, { prefix: '/avesia/api' })`:
-   - authRoutes → prefix: ''
    - healthRoutes → prefix: ''
    - patientRoutes → prefix: ''
    - sessionRoutes → prefix: ''
@@ -293,25 +291,19 @@ import healthRoutes from './routes/health.js'
 ```ts
 import type { FastifyPluginAsync } from 'fastify'
 
-const authRoutes: FastifyPluginAsync = async (app) => {
-  app.post('/auth/login', { ... }, handler)
-  app.post('/auth/register', { ... }, handler)
-  app.post('/auth/refresh', { ... }, handler)
-  app.get('/auth/me', { onRequest: [app.requireAuth], preHandler: [app.requireTenant] }, handler)
-  app.post('/auth/logout', { onRequest: [app.requireAuth] }, handler)
+const patientRoutes: FastifyPluginAsync = async (app) => {
+  app.get('/patients', { onRequest: [app.requireAuth], preHandler: [app.requireTenant] }, handler)
+  app.post('/patients', { onRequest: [app.requireAuth], preHandler: [app.requireTenant, app.requirePermission({resource:'patients',action:'create'})] }, handler)
+  // ...
 }
-export default authRoutes
+export default patientRoutes
 ```
-Note: requireAuth is a preHandler — it sets request.userId/organizationId/role.
+Note: requireAuth is a preHandler — it reads the `bi_auth` cookie, validates via BI Identity SSO, and sets request.userId/organizationId/role. No local auth routes (login/register/refresh) — those are handled by BI Identity at `/id/login`.
 
 ### 6.2 API — Route Specifications
 
-#### Auth (`routes/auth.ts`)
-- **POST /auth/login**: find User by email (include org), comparePassword, check user.status='ACTIVE', signTokens, upsert RefreshToken (hash token, check family reuse), return `{ user: User, tokens: AuthTokens }`. User response omits passwordHash.
-- **POST /auth/register**: Zod-validate RegisterRequest {organizationName, name, email, password}, create Organization + User in prisma.$transaction, signTokens, create RefreshToken, return `{ organization, user, tokens }`.
-- **POST /auth/refresh**: Verify refreshToken via verifyRefreshToken utility from jwt-utils. Find RefreshToken by hash(tokenHash). If not found OR revoked → AuthError. If revokedByReuse → revoke entire family (mark all family tokens as revokedByReuse). Create new token same family, revoke old. Sign fresh access+refresh. Return `{ tokens: AuthTokens }`.
-- **GET /auth/me**: requireAuth. FindUnique User by request.userId. Return `{ user }`.
-- **POST /auth/logout**: requireAuth. Revoke all RefreshTokens for user (set revokedAt).
+#### Auth (BI Identity SSO — no local routes)
+Auth is handled externally by BI Identity. The API auth plugin (`apps/api/src/plugins/auth.ts`) reads the `bi_auth` cookie and validates it via `http://bi-api:3300/api/auth/check`. If valid, the local User is find-or-created by email match via Prisma. There are no `/auth/login`, `/auth/register`, `/auth/refresh`, or `/auth/logout` routes in Avesia. Login happens at `/id/login` (BI Identity). The frontend redirects to `/id/login?redirect=/avesia/dashboard` when unauthenticated. Environment variable: `BI_IDENTITY_URL`.
 
 #### Patients (`routes/patients.ts`)
 All routes require `onRequest: [app.requireAuth]` + `preHandler: [app.requireTenant]`.
@@ -378,7 +370,6 @@ createRoot(document.getElementById('root')!).render(
 - react-router-dom v7 Routes definition:
   ```
   <Routes>
-    <Route path="/login" element={<LoginPage />} />
     <Route element={<ProtectedRoute />}>
       <Route element={<Layout />}>
         <Route index element={<DashboardPage />} />
@@ -389,12 +380,12 @@ createRoot(document.getElementById('root')!).render(
     </Route>
   </Routes>
   ```
-- ProtectedRoute checks useAuth().isAuthenticated, redirects to /login if not
+- ProtectedRoute checks useAuth().isAuthenticated, redirects to `/id/login?redirect=/avesia/dashboard` if not
 
 #### `src/components/layout/ProtectedRoute.tsx`
 - Import AuthContext from auth-context
 - If isLoading → show spinner (div with animate-spin)
-- If !isAuthenticated → Navigate to /login
+- If !isAuthenticated → redirect to `/id/login?redirect=/avesia/dashboard` (BI Identity)
 - Else → Outlet
 
 #### `src/components/layout/Layout.tsx`
@@ -409,12 +400,9 @@ createRoot(document.getElementById('root')!).render(
 - Mobile: hamburger toggle sidebar
 
 #### `src/pages/LoginPage.tsx`
-- Centered card (max-w-md) with Avesia branding
-- react-hook-form + zod validation (email, password min 8)
-- onSubmit: call authContext.login(email, password)
-- On success: navigate('/')
-- On error: toast.error (sonner) with error message
-- Loading state on submit button
+- No local login page — login is handled by BI Identity at `/id/login`
+- When unauthenticated, the frontend redirects to `/id/login?redirect=/avesia/dashboard`
+- This page may not exist; if it does, it should redirect to BI Identity
 
 #### `src/pages/DashboardPage.tsx`
 - useQuery for stats: api.patients.list({pageSize:1}) for total count, api.sessions.list() for counts
@@ -518,7 +506,7 @@ const session = await prisma.clinicalSession.findUnique({
 - **NO `any`** — use `unknown` with proper type guards
 - **NO `enum`** — use `as const` objects + type alias (pattern: `const X = { A: 'A' } as const; type X = (typeof X)[keyof typeof X]`)
 - **NO `@ts-ignore`** or `@ts-expect-error`
-- **NO mock implementations** — real DB queries, real JWT signing
+- **NO mock implementations** — real DB queries, real BI Identity SSO validation
 - **ESM** everywhere — `"type": "module"`, imports with `.js` extension
 - **Named exports** preferred, no default exports except route modules
 - **Explicit return types** on all exported functions
@@ -527,7 +515,7 @@ const session = await prisma.clinicalSession.findUnique({
 ### Architecture Conventions
 - Multi-tenant: app-layer `organizationId` filter on every query (NO RLS yet)
 - Soft delete: `deletedAt: DateTime?` on Organization, User, Professional, Patient
-- JWT: dual namespace (jwtAccess + jwtRefresh), 15min access / 7d refresh, rotation with reuse detection
+- Auth: BI Identity SSO (cookie-based) — reads `bi_auth` cookie, validates via Identity Service at `http://bi-api:3300/api/auth/check`, find-or-create User by email
 - RBAC: OWNER > ADMIN > PROFESSIONAL. Permission table with [role, resource, action] unique
 - AI: Local-first (Ollama) + cloud fallback (OpenRouter → NVIDIA NIM)
 - Audit logging: immutable trail for all mutations
@@ -558,7 +546,7 @@ All API routes served under `/avesia/api`. Web Vite proxy rewrites `/avesia/api/
 | 003 | AI Provider abstraction with OpenAI-compatible base (native fetch, NO openai SDK) |
 | 004 | Local worker with heartbeat + auto cloud fallback |
 | 005 | LocalWorker table for heartbeat tracking |
-| 006 | JWT access 15min + refresh rotation with family-based reuse detection |
+| 006 | BI Identity SSO (cookie-based) — replaces JWT access/refresh rotation |
 | 007 | Versioned clinical notes (no overwrite) |
 | 008 | Soft delete for people entities |
 | 009 | Branded IDs for domain identification |
@@ -588,7 +576,7 @@ All API routes served under `/avesia/api`. Web Vite proxy rewrites `/avesia/api/
 | `attachments` | sessionId/patientId, storageKey, type, mimeType | → Organization, Session, Patient, User |
 | `consents` | patientId, type, granted, tracked by user | → Organization, Patient, User |
 | `audit_logs` | userId, action, resource, immutable | → Organization, User |
-| `refresh_tokens` | tokenHash, family, expiresAt, revokedByReuse | → Organization, User |
+| `refresh_tokens` | (legacy — no longer used with BI Identity SSO) | → Organization, User |
 | `permissions` | [role, resource, action] unique | global |
 | `local_workers` | workerId (unique), hostname, capabilities, status | → Organization (optional) |
 
@@ -596,14 +584,8 @@ All API routes served under `/avesia/api`. Web Vite proxy rewrites `/avesia/api/
 
 ## 10. API Routes Reference
 
-### Auth
-| Method | Path | Auth | Body/Query | Response |
-|--------|------|------|-----------|----------|
-| POST | /auth/login | No | {email, password} | {user, tokens} |
-| POST | /auth/register | No | {orgName, name, email, password} | {org, user, tokens} |
-| POST | /auth/refresh | No | {refreshToken} | {tokens} |
-| GET | /auth/me | Yes | — | {user} |
-| POST | /auth/logout | Yes | — | 204 |
+### Auth (BI Identity SSO — no local routes)
+Auth is handled by BI Identity. No `/auth/login`, `/auth/register`, `/auth/refresh`, or `/auth/logout` routes exist in Avesia. The auth plugin (`apps/api/src/plugins/auth.ts`) reads the `bi_auth` cookie and validates via `http://bi-api:3300/api/auth/check`. Login is at `/id/login` (BI Identity). Env var: `BI_IDENTITY_URL`.
 
 ### Patients
 | Method | Path | Permission | Query | Response |
@@ -707,7 +689,7 @@ pnpm --filter @avesia/worker dev
 1. **NO `any` type** — use `unknown` + proper typing
 2. **NO `enum`** — use `as const` objects
 3. **NO `@ts-ignore`** or `@ts-expect-error`
-4. **NO mock implementations** — real database queries, real JWT signing
+4. **NO mock implementations** — real database queries, real BI Identity SSO validation
 5. **ESM** — `.js` extensions in imports, `"type": "module"`
 6. **Real AI providers** only — OpenRouter, NVIDIA NIM, Ollama. No fake provider.
 7. **Shadcn UI patterns** — cva, radix primitives, Tailwind CSS variables

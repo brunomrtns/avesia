@@ -11,7 +11,7 @@ Sistema SaaS multi-tenant onde clínicas gerenciam pacientes, sessões (com tran
 ## Quick start
 
 ```bash
-# 1. Copiar env e preencher secrets (mínimo: JWT secrets + 1 AI provider key)
+# 1. Copiar env e preencher secrets (mínimo: BI_IDENTITY_URL + 1 AI provider key)
 cp .env.example .env
 
 # 2. Subir infraestrutura (Postgres, Redis, MinIO)
@@ -93,11 +93,11 @@ avesia/
 ### Backend (apps/api — Node.js/Fastify)
 
 - **Fastify** + **Prisma ORM** (PostgreSQL)
-- **JWT auth** (access 15min + refresh 7d), RBAC com permissões por recurso
+- **BI Identity SSO** (cookie-based, `bi_auth` cookie validated via Identity Service), RBAC com permissões por recurso
 - **WebSocket** para progresso do pipeline em tempo real (Redis pub/sub → browser)
 - **Celery bridge**: encola tasks no formato Celery via Redis (substitui BullMQ)
 - Rate limiting, helmet, CORS, multipart upload
-- **Rotas**: auth, patients, sessions, organization, knowledge-base, health
+- **Rotas**: patients, sessions, organization, knowledge-base, health (auth handled by BI Identity SSO — no local login/register/refresh routes)
 - **25 modelos Prisma**: Organization, User, Professional, Patient, ClinicalSession, Transcript, AIAnalysis, KnowledgeBase, KnowledgeConcept, KnowledgeRelation, etc.
 
 ### Frontend (apps/web — React/Vite)
@@ -107,7 +107,7 @@ avesia/
 - **D3-force** para grafo de conhecimento interativo
 - **Sonner** para toasts, **react-hook-form** + Zod para formulários
 - WebSocket hook para progresso do pipeline em tempo real
-- **Páginas**: Dashboard, Patients, Sessions, SessionRoom (gravação/transcrição), KnowledgeBase (grafo + upload + query GraphRAG), Settings, Login
+- **Páginas**: Dashboard, Patients, Sessions, SessionRoom (gravação/transcrição), KnowledgeBase (grafo + upload + query GraphRAG), Settings (login via BI Identity em `/id/login`)
 
 ### Worker Python (apps/worker-python — Celery)
 
@@ -185,7 +185,7 @@ Reduz uma KB de 10k chunks para ~50 relevantes, economizando tokens mantendo acu
 | Cache/Queue    | Redis (Celery broker + pub/sub)                         |
 | Storage        | MinIO (S3-compatible)                                   |
 | Real-time      | WebSockets (`@fastify/websocket`)                       |
-| Auth           | JWT (access + refresh rotation)                         |
+| Auth           | BI Identity SSO (cookie-based)                         |
 | AI             | NVIDIA NIM / OpenRouter / Ollama (swappable)            |
 | Monorepo       | pnpm workspaces + Turborepo                             |
 

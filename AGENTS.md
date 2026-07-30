@@ -363,17 +363,17 @@ npx vite build       # Production build
 | `src/components/layout/Layout.tsx` | App shell (sidebar, header, command palette) |
 | `src/components/ui/` | Base UI components (shadcn/ui) |
 | `src/stores/session-store.ts` | SessionRoom state (Zustand) |
-| `src/lib/api-client.ts` | API client with token refresh |
-| `src/lib/auth-context.tsx` | Auth provider |
+| `src/lib/api-client.ts` | API client (cookie-based auth via BI Identity SSO) |
+| `src/lib/auth-context.tsx` | Auth provider (BI Identity SSO) |
 
 ## WebSocket
 
 `GET /knowledge-bases/:id/progress` — real-time pipeline progress stream.
-Auth via `?token=<accessJwt>`. Subscribes to Redis pub/sub channel
+Auth via BI Identity SSO (cookie-based). Subscribes to Redis pub/sub channel
 `kb:progress:<knowledgeBaseId>`.
 
 `GET /sessions/:id/copilot` — real-time clinical copilot stream.
-Auth via `?token=<accessJwt>`. Subscribes to Redis pub/sub channel
+Auth via BI Identity SSO (cookie-based). Subscribes to Redis pub/sub channel
 `session:copilot:<sessionId>`. Emits assistance items, status updates,
 and errors from the `SessionAIEngine`.
 
