@@ -20,6 +20,7 @@ import IORedis from 'ioredis';
 import { env } from '../config/env.js';
 import { AuthError, NotFoundError } from '@avesia/shared';
 import { kbProgressChannel, copilotChannel } from '@avesia/ai-core';
+import { validateBiAuth } from './auth.js';
 
 const websocketPlugin: FastifyPluginAsync = async (app): Promise<void> => {
   await app.register(websocket, {
@@ -35,21 +36,15 @@ const websocketPlugin: FastifyPluginAsync = async (app): Promise<void> => {
     async (socket, request: FastifyRequest) => {
       const { id } = request.params as { id: string };
 
-      const token = (request.query as { token?: string }).token;
-      if (!token) {
-        socket.close(4001, 'Missing token');
-        return;
-      }
-
-      let payload: { sub: string; org: string; role: string };
+      // Auth via bi_auth cookie (browsers send cookies with WS connections)
+      let organizationId: string;
       try {
-        payload = (app.jwt as any).jwtAccess.verify(token) as typeof payload;
+        const ctx = await validateBiAuth(app.prisma, request.headers.cookie);
+        organizationId = ctx.organizationId;
       } catch {
-        socket.close(4001, 'Invalid or expired token');
+        socket.close(4001, 'Authentication failed');
         return;
       }
-
-      const organizationId = payload.org;
 
       const kb = await app.prisma.knowledgeBase.findFirst({
         where: { id, organizationId, deletedAt: null },
@@ -108,24 +103,17 @@ const websocketPlugin: FastifyPluginAsync = async (app): Promise<void> => {
       // Log socket type for debugging
       log.info({ sessionId: id, socketType: typeof socket, hasSend: typeof socket?.send, hasClose: typeof socket?.close }, '[ws-copilot] connection upgraded');
 
-      // Auth via query string token (browsers can't set WS headers).
-      const token = (request.query as { token?: string }).token;
-      if (!token) {
-        socket.close(4001, 'Missing token');
-        return;
-      }
-
-      let payload: { sub: string; org: string; role: string };
+      // Auth via bi_auth cookie (browsers send cookies with WS connections)
+      let organizationId: string;
       try {
-        payload = (app.jwt as any).jwtAccess.verify(token) as typeof payload;
-        log.info({ sessionId: id, sub: payload.sub, org: payload.org }, '[ws-copilot] token verified OK');
+        const ctx = await validateBiAuth(app.prisma, request.headers.cookie);
+        organizationId = ctx.organizationId;
+        log.info({ sessionId: id, org: organizationId }, '[ws-copilot] auth OK via BI Identity cookie');
       } catch (err) {
-        log.error({ sessionId: id, err: (err as Error)?.message, stack: (err as Error)?.stack, tokenLen: token?.length }, '[ws-copilot] token verification FAILED');
-        socket.close(4001, 'Invalid or expired token');
+        log.error({ sessionId: id, err: (err as Error)?.message }, '[ws-copilot] auth FAILED');
+        socket.close(4001, 'Authentication failed');
         return;
       }
-
-      const organizationId = payload.org;
 
       // Verify the session belongs to the caller's organization.
       const session = await app.prisma.clinicalSession.findFirst({

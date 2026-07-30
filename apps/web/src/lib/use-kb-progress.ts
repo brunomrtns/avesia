@@ -8,7 +8,7 @@
 // ============================================================================
 
 import { useEffect, useRef } from 'react';
-import { buildApiUrl, ensureFreshAccessToken } from './api-client.js';
+import { buildApiUrl } from './api-client.js';
 
 export interface KbProgressEvent {
   readonly documentId: string;
@@ -29,12 +29,12 @@ interface UseKbProgressOptions {
   readonly enabled?: boolean;
 }
 
-function buildWsUrl(knowledgeBaseId: string, token: string): string {
+function buildWsUrl(knowledgeBaseId: string): string {
   // buildApiUrl returns an http(s) URL under /avesia/api/... ; convert to ws(s).
+  // Cookies (bi_auth) are sent automatically with same-origin WS connections.
   const httpUrl = buildApiUrl(`/knowledge-bases/${knowledgeBaseId}/progress`);
   const url = new URL(httpUrl);
   url.protocol = url.protocol === 'https:' ? 'wss:' : 'ws:';
-  url.searchParams.set('token', token);
   return url.toString();
 }
 
@@ -52,10 +52,9 @@ export function useKbProgress({ knowledgeBaseId, onEvent, enabled = true }: UseK
     let attempt = 0;
 
     const connect = async (): Promise<void> => {
-      const token = await ensureFreshAccessToken();
-      if (cancelled || !token) return;
+      if (cancelled) return;
 
-      socket = new WebSocket(buildWsUrl(knowledgeBaseId, token));
+      socket = new WebSocket(buildWsUrl(knowledgeBaseId));
 
       socket.onopen = () => {
         attempt = 0;

@@ -324,7 +324,7 @@ export function TextReveal({
         <motion.span
           key={`${word}-${i}`}
           variants={wordVariants}
-          className="inline-block"
+          className={cn('inline-block', className)}
           aria-hidden
         >
           {word}

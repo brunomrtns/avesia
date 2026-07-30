@@ -154,6 +154,8 @@ services:
     environment:
       NODE_ENV: production
       PORT: 3100
+      # BI Identity Service (Docker internal network)
+      BI_IDENTITY_URL: http://bi-api:3300
       # Override MinIO/Redis to use Docker service names (not localhost)
       MINIO_ENDPOINT: minio
       MINIO_PORT: 9000
@@ -175,6 +177,7 @@ services:
     networks:
       - avesia-net
       - trivestia-net
+      - bi-net
     healthcheck:
       test: ["CMD", "wget", "-qO-", "http://127.0.0.1:3100/health"]
       interval: 20s
@@ -311,6 +314,8 @@ networks:
     external: true    # Created by setup: docker network create avesia-net
   trivestia-net:
     external: true    # Already exists (created by trivestia setup)
+  bi-net:
+    external: true    # BI Identity network — created by bi-identity setup
 
 volumes:
   avesia-postgres-data:

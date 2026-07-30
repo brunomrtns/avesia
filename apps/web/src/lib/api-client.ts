@@ -1,13 +1,10 @@
 import type {
   CreatePatientRequest,
   CreateSessionRequest,
-  LoginRequest,
-  LoginResponse,
   MeResponse,
   PatientListResponse,
   PatientListQuery,
   PatientResponse,
-  RefreshResponse,
   SessionListQuery,
   SessionListResponse,
   SessionResponse,
@@ -17,8 +14,9 @@ import type {
 
 const VITE_API_URL = import.meta.env.VITE_API_URL;
 const API_PREFIX = '/avesia/api';
-export const REFRESH_ENDPOINT = `${API_PREFIX}/auth/refresh`;
-export const REFRESH_TOKEN_KEY = 'avesia_refresh_token';
+
+// BI Identity SSO login redirect URL
+export const SSO_LOGIN_URL = '/id/login?redirect=/avesia/';
 
 export interface InsightSource {
   chunkId: string;
@@ -392,63 +390,6 @@ export interface DashboardStats {
   }>;
 }
 
-let accessToken: string | null = null;
-let refreshPromise: Promise<string | null> | null = null;
-
-export function setAccessToken(token: string | null): void {
-  accessToken = token;
-}
-
-export function getAccessToken(): string | null {
-  return accessToken;
-}
-
-/**
- * Returns a valid (non-expired) access token, refreshing if necessary.
- * Use this for WebSocket connections where we can't rely on the 401-retry
- * mechanism (WS doesn't support retry after auth failure).
- */
-export async function ensureFreshAccessToken(): Promise<string | null> {
-  // Check if current token is still valid (with 30s buffer)
-  if (accessToken) {
-    try {
-      const payload = JSON.parse(atob(accessToken.split('.')[1] ?? ''));
-      const expiresAt = payload.exp * 1000; // seconds → ms
-      const now = Date.now();
-      const remaining = expiresAt - now;
-      console.log('[auth] token check', { remaining: Math.round(remaining / 1000) + 's', valid: remaining > 30_000 });
-      if (remaining > 30_000) {
-        return accessToken; // Still valid
-      }
-    } catch (e) {
-      console.warn('[auth] token decode failed', e);
-    }
-  }
-
-  // Token expired or missing — refresh
-  console.log('[auth] refreshing token...');
-  if (!refreshPromise) {
-    refreshPromise = refreshAccessToken().finally(() => {
-      refreshPromise = null;
-    });
-  }
-  const result = await refreshPromise;
-  console.log('[auth] refresh result', result ? 'success' : 'failed');
-  return result;
-}
-
-export function setRefreshToken(token: string | null): void {
-  if (token) {
-    localStorage.setItem(REFRESH_TOKEN_KEY, token);
-  } else {
-    localStorage.removeItem(REFRESH_TOKEN_KEY);
-  }
-}
-
-export function getRefreshToken(): string | null {
-  return localStorage.getItem(REFRESH_TOKEN_KEY);
-}
-
 export class ApiError extends Error {
   constructor(
     public readonly status: number,
@@ -488,43 +429,6 @@ function buildUrl(path: string, params?: RequestOptions['params']): string {
   return url.toString();
 }
 
-async function refreshAccessToken(): Promise<string | null> {
-  const refreshToken = getRefreshToken();
-  if (!refreshToken) return null;
-
-  try {
-    const res = await fetch(buildUrl('/auth/refresh'), {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ refreshToken }),
-    });
-
-    if (!res.ok) {
-      setRefreshToken(null);
-      return null;
-    }
-
-    const data = (await res.json()) as RefreshResponse;
-    accessToken = data.tokens.accessToken;
-    setRefreshToken(data.tokens.refreshToken);
-    return data.tokens.accessToken;
-  } catch {
-    setRefreshToken(null);
-    return null;
-  }
-}
-
-/**
- * Returns auth headers for direct fetch calls (e.g. Blob downloads).
- */
-export function authHeaders(): Record<string, string> {
-  const headers: Record<string, string> = {};
-  if (accessToken) {
-    headers.Authorization = `Bearer ${accessToken}`;
-  }
-  return headers;
-}
-
 export async function request<T>(path: string, options: RequestOptions = {}): Promise<T> {
   const { method = 'GET', body, params } = options;
 
@@ -535,13 +439,10 @@ export async function request<T>(path: string, options: RequestOptions = {}): Pr
     headers['Content-Type'] = 'application/json';
   }
 
-  if (accessToken) {
-    headers.Authorization = `Bearer ${accessToken}`;
-  }
-
   const fetchOptions: RequestInit = {
     method,
     headers,
+    credentials: 'include',
   };
   if (body !== undefined) {
     fetchOptions.body = isFormData ? (body as FormData) : JSON.stringify(body);
@@ -552,35 +453,8 @@ export async function request<T>(path: string, options: RequestOptions = {}): Pr
   const res = await fetch(buildUrl(path, params), fetchOptions);
 
   if (res.status === 401 && !path.startsWith('/auth/')) {
-    if (!refreshPromise) {
-      refreshPromise = refreshAccessToken().finally(() => {
-        refreshPromise = null;
-      });
-    }
-
-    const newToken = await refreshPromise;
-    if (newToken) {
-      headers.Authorization = `Bearer ${newToken}`;
-      const retryOptions: RequestInit = {
-        method,
-        headers,
-      };
-      if (body !== undefined) {
-        retryOptions.body = isFormData ? (body as FormData) : JSON.stringify(body);
-      } else if (method === 'POST' || method === 'PATCH' || method === 'PUT') {
-        retryOptions.body = JSON.stringify({});
-      }
-      const retryRes = await fetch(buildUrl(path, params), retryOptions);
-      if (!retryRes.ok) {
-        const { message, body } = await extractErrorMessage(retryRes);
-        throw new ApiError(retryRes.status, message, body);
-      }
-      return (await retryRes.json()) as T;
-    }
-
-    setAccessToken(null);
-    setRefreshToken(null);
-    window.location.href = `${import.meta.env.BASE_URL}login`;
+    // BI Identity SSO: redirect to login page
+    window.location.href = SSO_LOGIN_URL;
     throw new ApiError(401, 'Session expired', null);
   }
 
@@ -626,14 +500,10 @@ async function extractErrorMessage(res: Response): Promise<{ message: string; bo
 
 export const api = {
   auth: {
-    login: (data: LoginRequest): Promise<LoginResponse> =>
-      request<LoginResponse>('/auth/login', { method: 'POST', body: data }),
     me: (): Promise<MeResponse> => request<MeResponse>('/auth/me'),
-    refresh: (): Promise<RefreshResponse> =>
-      request<RefreshResponse>('/auth/refresh', {
-        method: 'POST',
-        body: { refreshToken: getRefreshToken() },
-      }),
+    logout: (): Promise<void> => request<void>('/auth/logout', { method: 'POST' }),
+    ssoRedirect: (): string => SSO_LOGIN_URL,
+    // Kept for backward compat — BI Identity handles passwords now
     changePassword: (data: { currentPassword: string; newPassword: string }): Promise<{ success: boolean }> =>
       request<{ success: boolean }>('/auth/change-password', { method: 'POST', body: data }),
   },
@@ -785,11 +655,11 @@ export const api = {
 
   reports: {
     sessionsCsv: (): Promise<Blob> =>
-      fetch(buildUrl('/reports/sessions.csv'), { headers: authHeaders() }).then((r) => r.blob()),
+      fetch(buildUrl('/reports/sessions.csv'), { credentials: 'include' }).then((r) => r.blob()),
     patientsCsv: (): Promise<Blob> =>
-      fetch(buildUrl('/reports/patients.csv'), { headers: authHeaders() }).then((r) => r.blob()),
+      fetch(buildUrl('/reports/patients.csv'), { credentials: 'include' }).then((r) => r.blob()),
     clinicalNotesCsv: (): Promise<Blob> =>
-      fetch(buildUrl('/reports/clinical-notes.csv'), { headers: authHeaders() }).then((r) => r.blob()),
+      fetch(buildUrl('/reports/clinical-notes.csv'), { credentials: 'include' }).then((r) => r.blob()),
   },
 
   onboarding: {

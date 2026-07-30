@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import * as DialogPrimitive from '@radix-ui/react-dialog';
 import { Upload, AlertCircle, FileText, X } from 'lucide-react';
-import { buildApiUrl, getAccessToken } from '../../lib/api-client.js';
+import { buildApiUrl } from '../../lib/api-client.js';
 import { Dropzone } from '@/components/ui/dropzone';
 
 interface UploadDialogProps {
@@ -37,16 +37,10 @@ export function UploadDialog({ open, onOpenChange, knowledgeBaseId }: UploadDial
       const formData = new FormData();
       formData.append('file', file);
 
-      const headers: Record<string, string> = {};
-      const token = getAccessToken();
-      if (token) {
-        headers.Authorization = `Bearer ${token}`;
-      }
-
       const res = await fetch(buildApiUrl(`/knowledge-bases/${knowledgeBaseId}/upload`), {
         method: 'POST',
-        headers,
         body: formData,
+        credentials: 'include',
       });
 
       if (!res.ok) {

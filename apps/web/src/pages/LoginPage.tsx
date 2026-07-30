@@ -1,62 +1,38 @@
-import { useState } from 'react';
+import { useEffect } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
-import { useForm } from 'react-hook-form';
-import { zodResolver } from '@hookform/resolvers/zod';
-import { z } from 'zod';
-import { toast } from 'sonner';
-import { Eye, EyeOff, Loader2, Sparkles } from 'lucide-react';
+import { Sparkles, Loader2 } from 'lucide-react';
 
 import { useAuthStore } from '@/stores/auth-store';
-import { api } from '@/lib/api-client';
+import { SSO_LOGIN_URL } from '@/lib/api-client';
 import { BrandLogo, BRAND } from '@/components/branding/BrandLogo';
 import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
-import { cn } from '@/lib/utils';
 import { Reveal } from '@/components/animation/reveal';
 
-const loginFormSchema = z.object({
-  email: z.string().email('Email inválido'),
-  password: z.string().min(8, 'Senha deve ter pelo menos 8 caracteres'),
-});
-
-type LoginFormValues = z.infer<typeof loginFormSchema>;
-
 export function LoginPage(): React.ReactNode {
-  const login = useAuthStore((s) => s.login);
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
-  const [showPassword, setShowPassword] = useState(false);
+  const isAuthenticated = useAuthStore((s) => s.isAuthenticated);
+  const orgSlug = useAuthStore((s) => s.orgSlug);
+  const isLoading = useAuthStore((s) => s.isLoading);
 
-  const {
-    register,
-    handleSubmit,
-    formState: { errors, isSubmitting },
-  } = useForm<LoginFormValues>({
-    resolver: zodResolver(loginFormSchema),
-    defaultValues: { email: '', password: '' },
-  });
-
-  const onSubmit = async (values: LoginFormValues): Promise<void> => {
-    try {
-      await login(values.email, values.password);
-
-      // Check for returnTo param (e.g. from Videoclip Generator redirect)
+  // If already authenticated, redirect to the org dashboard
+  useEffect(() => {
+    if (!isLoading && isAuthenticated) {
       const returnTo = searchParams.get('returnTo');
       if (returnTo && returnTo.startsWith('/') && !returnTo.startsWith('//')) {
-        // Only allow same-origin absolute paths (no protocol-relative URLs)
         window.location.href = returnTo;
         return;
       }
-
-      // Redirect to the org-scoped dashboard
-      const slug = useAuthStore.getState().orgSlug ?? (await api.auth.me()).organization?.slug;
-      navigate(slug ? `/${slug}` : '/', { replace: true });
-    } catch (err) {
-      const message = err instanceof Error ? err.message : 'Erro ao fazer login. Tente novamente.';
-      toast.error(message);
+      navigate(orgSlug ? `/${orgSlug}` : '/', { replace: true });
     }
-  };
+  }, [isAuthenticated, isLoading, orgSlug, navigate, searchParams]);
+
+  // If not authenticated, redirect to BI Identity SSO login
+  useEffect(() => {
+    if (!isLoading && !isAuthenticated) {
+      window.location.href = SSO_LOGIN_URL;
+    }
+  }, [isAuthenticated, isLoading]);
 
   return (
     <div className="relative flex min-h-screen items-center justify-center overflow-hidden bg-background px-4">
@@ -83,74 +59,26 @@ export function LoginPage(): React.ReactNode {
           </p>
         </div>
 
-        {/* Login card */}
+        {/* Redirect card */}
         <div className="glass-card gradient-border-active elevation-accent rounded-xl p-8">
-          <div className="mb-6">
+          <div className="mb-6 flex flex-col items-center text-center">
             <h2 className="text-lg font-semibold text-foreground">Entrar na sua conta</h2>
-            <p className="text-sm text-foreground-secondary">Insira suas credenciais para acessar</p>
+            <p className="text-sm text-foreground-secondary">
+              Redirecionando para Brunointegrations Identity...
+            </p>
           </div>
 
-          <form onSubmit={handleSubmit(onSubmit)} className="space-y-4">
-            {/* Email */}
-            <div className="space-y-2">
-              <Label htmlFor="login-email">Email</Label>
-              <Input
-                id="login-email"
-                type="email"
-                autoComplete="email"
-                placeholder="seu@email.com"
-                className={cn(errors.email && 'border-destructive')}
-                {...register('email')}
-              />
-              {errors.email && <p className="text-xs text-destructive">{errors.email.message}</p>}
-            </div>
-
-            {/* Password */}
-            <div className="space-y-2">
-              <Label htmlFor="login-password">Senha</Label>
-              <div className="relative">
-                <Input
-                  id="login-password"
-                  type={showPassword ? 'text' : 'password'}
-                  autoComplete="current-password"
-                  placeholder="••••••••"
-                  className={cn('pr-10', errors.password && 'border-destructive')}
-                  {...register('password')}
-                />
-                <button
-                  type="button"
-                  className="absolute right-3 top-1/2 -translate-y-1/2 text-foreground-muted transition-colors hover:text-foreground"
-                  onClick={() => setShowPassword((v) => !v)}
-                  tabIndex={-1}
-                  aria-label={showPassword ? 'Ocultar senha' : 'Mostrar senha'}
-                >
-                  {showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
-                </button>
-              </div>
-              {errors.password && (
-                <p className="text-xs text-destructive">{errors.password.message}</p>
-              )}
-            </div>
-
+          <div className="flex flex-col items-center gap-4">
+            <Loader2 className="h-8 w-8 animate-spin text-primary" />
             <Button
-              type="submit"
               variant="gradient"
               className="w-full"
-              disabled={isSubmitting}
+              onClick={() => { window.location.href = SSO_LOGIN_URL; }}
             >
-              {isSubmitting ? (
-                <>
-                  <Loader2 className="h-4 w-4 animate-spin" />
-                  Entrando...
-                </>
-              ) : (
-                <>
-                  <Sparkles className="h-4 w-4" />
-                  Entrar
-                </>
-              )}
+              <Sparkles className="h-4 w-4" />
+              Entrar via Brunointegrations
             </Button>
-          </form>
+          </div>
         </div>
 
         <p className="mt-6 text-center text-xs text-foreground-muted">

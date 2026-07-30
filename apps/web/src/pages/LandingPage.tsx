@@ -128,7 +128,7 @@ export function LandingPage(): React.ReactNode {
           <Button
             variant="ghost"
             size="sm"
-            onClick={() => navigate('/login')}
+            onClick={() => window.location.href = '/id/login?redirect=/avesia/'}
             className="text-foreground-secondary"
           >
             Entrar
@@ -136,7 +136,7 @@ export function LandingPage(): React.ReactNode {
           <Button
             variant="gradient"
             size="sm"
-            onClick={() => navigate('/login')}
+            onClick={() => window.location.href = '/id/login?redirect=/avesia/'}
             className="gap-2"
           >
             <Sparkles className="h-3.5 w-3.5" />
@@ -178,7 +178,7 @@ export function LandingPage(): React.ReactNode {
               <Button
                 variant="gradient"
                 size="lg"
-                onClick={() => navigate('/login')}
+                onClick={() => window.location.href = '/id/login?redirect=/avesia/'}
                 className="gap-2 shadow-glow"
               >
                 <Sparkles className="h-4 w-4" />
@@ -188,7 +188,7 @@ export function LandingPage(): React.ReactNode {
               <Button
                 variant="outline"
                 size="lg"
-                onClick={() => navigate('/login')}
+                onClick={() => window.location.href = '/id/login?redirect=/avesia/'}
                 className="gap-2"
               >
                 Solicitar demonstração
@@ -378,7 +378,7 @@ export function LandingPage(): React.ReactNode {
               <Button
                 variant="gradient"
                 size="lg"
-                onClick={() => navigate('/login')}
+                onClick={() => window.location.href = '/id/login?redirect=/avesia/'}
                 className="gap-2 shadow-glow"
               >
                 <Sparkles className="h-4 w-4" />
@@ -388,7 +388,7 @@ export function LandingPage(): React.ReactNode {
               <Button
                 variant="outline"
                 size="lg"
-                onClick={() => navigate('/login')}
+                onClick={() => window.location.href = '/id/login?redirect=/avesia/'}
               >
                 Solicitar demonstração
               </Button>

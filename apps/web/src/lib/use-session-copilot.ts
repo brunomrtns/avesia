@@ -9,7 +9,7 @@
 // ============================================================================
 
 import { useEffect, useRef, useCallback } from 'react';
-import { buildApiUrl, ensureFreshAccessToken, type CopilotEvent, type CopilotSettings } from './api-client.js';
+import { buildApiUrl, type CopilotEvent, type CopilotSettings } from './api-client.js';
 
 interface UseSessionCopilotOptions {
   readonly sessionId: string | null | undefined;
@@ -20,11 +20,10 @@ interface UseSessionCopilotOptions {
   readonly onSettingsUpdate?: (settings: CopilotSettings) => void;
 }
 
-function buildCopilotWsUrl(sessionId: string, token: string): string {
+function buildCopilotWsUrl(sessionId: string): string {
   const httpUrl = buildApiUrl(`/sessions/${sessionId}/copilot`);
   const url = new URL(httpUrl);
   url.protocol = url.protocol === 'https:' ? 'wss:' : 'ws:';
-  url.searchParams.set('token', token);
   return url.toString();
 }
 
@@ -65,11 +64,9 @@ export function useSessionCopilot({
     let attempt = 0;
 
     const connect = async (): Promise<void> => {
-      // Ensure we have a fresh (non-expired) token before connecting
-      const token = await ensureFreshAccessToken();
-      if (cancelled || !token) return;
+      if (cancelled) return;
 
-      socket = new WebSocket(buildCopilotWsUrl(sessionId, token));
+      socket = new WebSocket(buildCopilotWsUrl(sessionId));
 
       socket.onopen = () => {
         console.log('[copilot-ws] connected', { sessionId, attempt });

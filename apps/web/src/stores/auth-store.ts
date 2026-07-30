@@ -2,12 +2,7 @@ import { create } from 'zustand';
 
 import type { PendingTermsVersion, User } from '@avesia/types';
 
-import {
-  api,
-  getRefreshToken,
-  setAccessToken,
-  setRefreshToken,
-} from '@/lib/api-client';
+import { api, SSO_LOGIN_URL } from '@/lib/api-client';
 
 interface AuthState {
   readonly user: User | null;
@@ -20,7 +15,6 @@ interface AuthState {
 
   // Actions
   init: () => Promise<void>;
-  login: (email: string, password: string) => Promise<void>;
   logout: () => void;
   updateOrgSlug: (slug: string, name?: string) => void;
   clearPendingTerms: () => void;
@@ -37,16 +31,7 @@ export const useAuthStore = create<AuthState>((set) => ({
   mustChangePassword: false,
 
   init: async () => {
-    const token = getRefreshToken();
-    if (!token) {
-      set({ isLoading: false });
-      return;
-    }
-
     try {
-      const refreshRes = await api.auth.refresh();
-      setAccessToken(refreshRes.tokens.accessToken);
-      setRefreshToken(refreshRes.tokens.refreshToken);
       const meRes = await api.auth.me();
       set({
         user: meRes.user,
@@ -56,29 +41,21 @@ export const useAuthStore = create<AuthState>((set) => ({
         isLoading: false,
       });
     } catch {
-      setAccessToken(null);
-      setRefreshToken(null);
-      set({ user: null, orgSlug: null, orgName: null, isAuthenticated: false, isLoading: false, mustChangePassword: false });
+      set({
+        user: null,
+        orgSlug: null,
+        orgName: null,
+        isAuthenticated: false,
+        isLoading: false,
+      });
     }
   },
 
-  login: async (email, password) => {
-    const res = await api.auth.login({ email: email as never, password });
-    setAccessToken(res.tokens.accessToken);
-    setRefreshToken(res.tokens.refreshToken);
-    set({
-      user: res.user,
-      orgSlug: res.organization?.slug ?? null,
-      orgName: res.organization?.name ?? null,
-      isAuthenticated: res.user !== null,
-      pendingTerms: res.pendingTerms ?? [],
-      mustChangePassword: res.mustChangePassword ?? false,
-    });
-  },
-
   logout: () => {
-    setAccessToken(null);
-    setRefreshToken(null);
+    // Call the API logout endpoint (best-effort), then redirect to BI Identity login
+    void api.auth.logout().catch(() => {
+      // Ignore errors — proceed with local state clear + redirect
+    });
     set({
       user: null,
       orgSlug: null,
@@ -87,6 +64,7 @@ export const useAuthStore = create<AuthState>((set) => ({
       pendingTerms: [],
       mustChangePassword: false,
     });
+    window.location.href = SSO_LOGIN_URL;
   },
 
   updateOrgSlug: (slug, name) => {
